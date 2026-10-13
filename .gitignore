@@ -64,3 +64,6 @@ new_storage/
 
 # upload_excel
 upload_*.xlsx
+
+# data
+/data/
