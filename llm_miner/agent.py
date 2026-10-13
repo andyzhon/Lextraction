@@ -16,12 +16,12 @@ from llm_miner.error import BaseMiningError
 from llm_miner.meta_collector import MetaCollector
 from llm_miner.pricing import TokenChecker
 
-
+# LLMMiner类，调用不同 Agent，完成材料数据分类、识别和提取
 class LLMMiner(Chain):
-    categorize_agent: Chain
-    synthesis_agent: Chain
-    table_agent: Chain
-    property_agent: Chain
+    categorize_agent: Chain # 识别文本类型
+    synthesis_agent: Chain # 提取合成条件
+    table_agent: Chain # 提取表格数据
+    property_agent: Chain # 提取材料性能
     input_key: str = "paragraph"
     output_key: str = "output"
 
@@ -40,18 +40,19 @@ class LLMMiner(Chain):
     def _parse_output(self, output: str) -> Dict[str, str]:
         raise NotImplementedError()
 
-    def _call(
+
+    def _call( # 核心执行方法 
         self,
         inputs: Dict[str, Any],
-        run_manager: Optional[CallbackManagerForChainRun] = None,
+        run_manager: Optional[CallbackManagerForChainRun] = None, # run_manager是LangChain的回调管理器
     ) -> Dict[str, Any]:
         _run_manager = run_manager or CallbackManagerForChainRun.get_noop_manager()
-        callbacks = _run_manager.get_child()
+        callbacks = _run_manager.get_child() # 子调用
 
         jr: JournalReader = inputs[self.input_key]
-        token_checker: TokenChecker = inputs.get("token_checker")
+        token_checker: TokenChecker = inputs.get("token_checker") # TokenChecker用于L2M3的Token用量管理
 
-        for element in jr.elements:
+        for element in jr.elements: # 遍历所有论文元素
             try:
                 categories = self.categorize_agent.run(
                     paragraph=element,
@@ -67,7 +68,7 @@ class LLMMiner(Chain):
         if config.get("reconstruct"):
             jr.reconstruct()
 
-        for element in jr.get_synthesis_conditions():
+        for element in jr.get_synthesis_conditions(): # 合成条件提取
             try:
                 output = self.synthesis_agent.run(
                     element=element, callbacks=callbacks, token_checker=token_checker
@@ -78,7 +79,7 @@ class LLMMiner(Chain):
                 pass
                 # print (output)
 
-        for element in jr.get_properties():
+        for element in jr.get_properties(): # 正文材料属性提取
             try:
                 output = self.property_agent.run(
                     element=element, callbakcs=callbacks, token_checker=token_checker
@@ -89,7 +90,7 @@ class LLMMiner(Chain):
                 pass
                 # print (output)
 
-        for element in jr.get_tables():
+        for element in jr.get_tables(): # 表格数据提取
             try:
                 output = self.table_agent.run(
                     element=element, callbakcs=callbacks, token_checker=token_checker
@@ -98,7 +99,7 @@ class LLMMiner(Chain):
                 element.set_data([str(e)])
             # print (output)
 
-        mc = MetaCollector.from_journal_reader(jr)
+        mc = MetaCollector.from_journal_reader(jr) # 整合所有提取结果
         jr.result = mc.run()
 
         if config["reconstruct"]:

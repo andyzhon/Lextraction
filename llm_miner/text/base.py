@@ -21,8 +21,8 @@ from llm_miner.pricing import TokenChecker, update_token_checker
 
 
 class TextMiningAgent(Chain):
-    type_chain: LLMChain
-    extract_chain: LLMChain
+    type_chain: LLMChain # 属性类型识别
+    extract_chain: LLMChain # 具体数据提取
     input_key: str = "element"
     output_key: str = "output"
 
@@ -70,7 +70,7 @@ class TextMiningAgent(Chain):
             'paragraph': paragraph,
         }
         try:
-            llm_output = self.type_chain.run(
+            llm_output = self.type_chain.run( # self.type_chain是一个LLMChain对象，内部绑定了LLM和Prompt
                 **llm_kwargs,
                 callbacks=callbacks,
                 stop=["Paragraph:"]
@@ -99,7 +99,7 @@ class TextMiningAgent(Chain):
         example_string = ""
         prop_string = ""
 
-        for prop in property_type:
+        for prop in property_type: # 动态生成提取规则
             try:
                 st_data = Formatter.structured_data[prop]
                 info = Formatter.information[prop]
@@ -121,7 +121,7 @@ class TextMiningAgent(Chain):
             'paragraph': paragraph,
         }
         try:
-          llm_output = self.extract_chain.run(
+          llm_output = self.extract_chain.run( # 提取具体数据
               **llm_kwargs,
               callbacks=callbacks,
               stop=["Paragraph:"]

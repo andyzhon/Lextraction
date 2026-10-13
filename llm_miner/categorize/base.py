@@ -20,7 +20,7 @@ from llm_miner.pricing import TokenChecker, update_token_checker
 
 class CategorizeAgent(Chain):
     categorize_chain: LLMChain
-    labels: List[str] = ["table", "figure", "property", "synthesis condition", "else"]
+    labels: List[str] = ["table", "figure", "property", "synthesis condition", "else"] # 这里定义了五种分类标签
     input_key: str = "paragraph"
     output_key: str = "output"
 

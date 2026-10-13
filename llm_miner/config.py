@@ -1,7 +1,7 @@
 config = {
     # default llms
-    "model_name": "gpt-4",
-    "simple_model_name": "gpt-3.5-turbo-16k",
+    "model_name": "deepseek-flash", # 模型选择修改
+    "simple_model_name": "deepseek-flash",
     # fine-tuned llms (optional)
     "fine_tuning_models": {
         "ft_text_categorize": None,

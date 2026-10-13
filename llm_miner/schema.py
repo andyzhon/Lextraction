@@ -8,15 +8,15 @@ import json
 
 class Paragraph(BaseModel):
     idx: Union[int, str]
-    type: str
-    classification: Optional[Any] = None
+    type: str # 原始文档类型，比如text或者table
+    classification: Optional[Any] = None # 语义分类结果，比如材料性质
     content: str
     clean_text: Optional[str] = None
-    data: Optional[List[Any]] = None
-    include_properties: Optional[Any] = None
-    intermediate_step: Dict[str, Any] = dict()
+    data: Optional[List[Any]] = None # 最终提取结果
+    include_properties: Optional[Any] = None # 包含哪些属性
+    intermediate_step: Dict[str, Any] = dict() # 中间处理结果
 
-    def __getitem__(self, item):
+    def __getitem__(self, item): # 让对象支持方括号访问
         return getattr(self, item)
 
     def print(
@@ -32,7 +32,7 @@ class Paragraph(BaseModel):
         )
         print(string)
 
-    def merge(self, others, merge_idx=False) -> None:
+    def merge(self, others, merge_idx=False) -> None: # 合并段落
         if merge_idx:
             self.idx = f"{self.idx}, {others.idx}"
         self.content += others.content
@@ -44,7 +44,7 @@ class Paragraph(BaseModel):
             else:
                 self.data = others.data
 
-    def has_data(
+    def has_data( # 判断是否已经提取出数据
         self,
     ) -> bool:
         if not self.data:
@@ -57,7 +57,7 @@ class Paragraph(BaseModel):
     def add_intermediate_step(self, step: str, output: str) -> None:
         self.intermediate_step[step] = output
 
-    def set_data(self, data) -> None:
+    def set_data(self, data) -> None: # 保存LLM提取的数据
         if not isinstance(data, list):  # data must be list, not other types
             data = [data]
 
@@ -76,10 +76,10 @@ class Paragraph(BaseModel):
     ) -> Dict[str, Any]:
         return self.intermediate_step
 
-    def set_classification(self, cls) -> None:
+    def set_classification(self, cls) -> None: # 保存分类结果
         if self.classification is None:
             if isinstance(cls, str):
-                self.classification = [cls]
+                self.classification = [cls] # 列表
             else:
                 self.classification = cls
         else:
@@ -91,7 +91,7 @@ class Paragraph(BaseModel):
     def set_clean_text(self, text) -> None:
         self.clean_text = text
 
-    def set_include_properties(self, props: List[Any]) -> None:
+    def set_include_properties(self, props: List[Any]) -> None: # 保存需要提取的属性
         if self.include_properties is None:
             self.include_properties = props
         else:
@@ -100,7 +100,7 @@ class Paragraph(BaseModel):
     def copy(
         self,
     ):
-        return copy.deepcopy(self)
+        return copy.deepcopy(self) # 深拷贝，新的独立对象，不修改原始数据
 
     def clear(
         self,
@@ -147,7 +147,7 @@ class Paragraph(BaseModel):
         return cls.from_dict(data)
 
 
-class Elements(Sequence, BaseModel):
+class Elements(Sequence, BaseModel): # 继承sequence，希望Elements能像列表一样使用
     elements: List[Paragraph]
 
     def __getitem__(self, idx: int) -> Paragraph:
@@ -161,7 +161,7 @@ class Elements(Sequence, BaseModel):
     def __bool__(self) -> bool:
         return bool(self.elements)
 
-    def get_tables(self) -> List[Paragraph]:
+    def get_tables(self) -> List[Paragraph]: # 获取表格
         return [e for e in self.elements if e.type == "table"]
 
     def get_texts(self) -> List[Paragraph]:
@@ -181,7 +181,7 @@ class Elements(Sequence, BaseModel):
         return [
             e
             for e in self.elements
-            if e.classification and "property" in e.classification
+            if e.classification and "property" in e.classification # 检查分类结果是否存在且非空；检查分类结果中是否包含"property"
         ]
 
     def to_dict(
@@ -197,7 +197,7 @@ class Elements(Sequence, BaseModel):
         self.elements.append(para)
 
     @classmethod
-    def empty(
+    def empty( # 创建空Elements对象
         cls,
     ):
         return cls(elements=list())

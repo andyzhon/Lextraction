@@ -87,7 +87,7 @@ class CategorizeAgent(Chain):
 
         try:
             tmp_ast = ast.literal_eval(output)
-        except ValueError:
+        except (ValueError, SyntaxError):
             pass
         else:
             if isinstance(tmp_ast, list):
