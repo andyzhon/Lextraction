@@ -23,7 +23,7 @@ Paragraph:{paragraph}
 List: """
 
 
-PROMPT_STRUCT = """Extract the relevant information about the synthesis of MOFs mentioned in the paragraph.
+PROMPT_STRUCT = """Extract the relevant information about the preparation of materials mentioned in the paragraph, including MOFs and coated battery cathode materials.
 
 There are guidelines for output format:
 - Output must be in the format {{"meta":{{"name":"", "symbol":"", "chemical formula":""}}, "processes": list, "yield": str,and "other properties": [str, str, ...]}}.
@@ -42,6 +42,9 @@ You must follow rules below:
 - If there are more than two instances of a precursor, additive, surfactant, solution, solvent, or reducing agent, list all of them in a single dictionary.
 - Remember, a precursor is measured in units of mass, while a solution is measured in units of volume.
 - Never fabricate or add information that isn't present in the paragraph. Do not write the information in the example.
+- For coated materials, identify the substrate and coating in "meta" and "other properties" when stated in the paragraph.
+- Distinguish coating preparation from electrode/cell fabrication. If both are described, put electrode fabrication in a separate material entry. Do not assign electrode drying conditions to the coating process.
+- Characterization, electrolyte immersion tests, electrochemical measurements and thermal analysis are not synthesis operations. Do not report their conditions as material preparation conditions.
 - If a range symbol like "4-6" is provided, produce separate results for each number in the range.
 - When "Ln" or "M" appears in the paragraph, you should substitute them with the specified metals. ex) ChemLn (Ln=Pr(1), Gd(2), Dy(3), Er(4)), There are four chemicals; ChemPr, ChemGd, ChemDy, ChemEr
 - If the terms "Teflon-lined" or "seal" appear in the paragraph, consider them indicative of "solvothermal_synthesis".

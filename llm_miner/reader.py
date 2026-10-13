@@ -1,27 +1,25 @@
-from collections import namedtuple
 import warnings
 import json
 from typing import List, Any, Dict, Union, Iterable
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pathlib import Path
 
 from llm_miner.schema import Paragraph, Elements
-from llm_miner.parser import parser_dict, Metadata, BaseParser
-from llm_miner.parser.utils import publisher_finder
+from llm_miner.parser import parser_dict, Metadata, BaseParser, MarkdownParser
 from llm_miner.utils import merge_para_by_token
 from llm_miner.error import ReaderError, ParserError
 from llm_miner.config import config
-from llm_miner.meta_collector import MetaCollector, Results
+from llm_miner.meta_collector import Results
 
 warnings.filterwarnings("ignore", category=UserWarning, module="bs4")
 
-# JournalReader类，解析论文 XML/HTML，提取正文、表格、图注及元数据
+# JournalReader类，解析论文 Markdown/XML/HTML，提取正文、表格、图注及元数据
 class JournalReader(BaseModel):
     filepath: Path
     publisher: str
     elements: Elements
-    cln_elements: Elements = Elements.empty() # 重组后内容
-    result: Results = Results.empty()
+    cln_elements: Elements = Field(default_factory=Elements.empty) # 重组后内容
+    result: Results = Field(default_factory=Results.empty)
     # result: Results = []
     metadata: Metadata
 
@@ -43,7 +41,7 @@ class JournalReader(BaseModel):
 
     @property
     def url(self):
-        return f"https://doi.org/{self.doi}"
+        return f"https://doi.org/{self.doi}" if self.doi else None
 
     def get_tables(self) -> List[Paragraph]: # 获取特定类型的内容；类型注释，这个方法预期返回一个列表，其中每个元素都是Paragraph对象
         if self.cln_elements: # 是否存在重组后的内容
@@ -103,8 +101,8 @@ class JournalReader(BaseModel):
         }
 
     def to_json(self, filepath):
-        with open(filepath, "w") as f:
-            json.dump(self.to_dict(), f)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False)
 
     def reconstruct(self, model_name: str = "gpt-4") -> None: # 重新组织论文段落
         if self.cln_elements:  # clear cln_elements
@@ -134,23 +132,23 @@ class JournalReader(BaseModel):
 
     @classmethod
     def from_file(cls, filepath: str, publisher: str = None): # 类方法，入口方法
-        if publisher is None:
-            raise NotImplementedError("publisher finder is not implemented.")
-            # publisher = publisher_finder(filepath)
-
-        publisher = publisher.lower()
-        if publisher not in parser_dict:
-            raise ReaderError(
-                f"publisher must be one of [`acs`, `rsc`, `elsevier`, `springer], not {publisher}"
-            )
-
-        parser: BaseParser = parser_dict[publisher] # 不同出版社使用不同的文件解析器
+        path = Path(filepath)
+        if path.suffix.lower() in {".md", ".markdown"}:
+            parser = MarkdownParser
+            publisher = publisher.lower() if publisher else "markdown"
+        else:
+            if publisher is None:
+                raise NotImplementedError("publisher is required for XML/HTML; Markdown is detected automatically.")
+            publisher = publisher.lower()
+            if publisher not in parser_dict:
+                raise ReaderError(f"publisher must be one of {list(parser_dict)}, not {publisher}")
+            parser: BaseParser = parser_dict[publisher]
         try:
             file_bs = parser.open_file(filepath) # 打开文件
             elements = parser.parsing(file_bs) # 解析论文内容
             metadata = parser.get_metadata(file_bs) # 解析论文元数据
         except Exception as e:
-            raise ParserError(e)
+            raise ParserError(e) from e
 
         return cls( # 返回JournalReader对象，这里的cls()实际上就是创建JournalReader实例
             filepath=Path(filepath),
@@ -182,6 +180,6 @@ class JournalReader(BaseModel):
 
     @classmethod
     def from_json(cls, filepath):
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f) # 从JSON文件读取python字典
         return cls.from_dict(data) # 将字典转换为JournalReader对象

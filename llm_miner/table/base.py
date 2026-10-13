@@ -130,63 +130,69 @@ class TableMiningAgent(Chain):
         callbacks = _run_manager.get_child()
 
         element: Paragraph = inputs[self.input_key]
-        token_checker: TokenChecker = inputs['token_checker']
-        paragraph: str = TableMiningAgent.remove_attributes(element.content)
-
-        llm_kwargs = {
-            'paragraph': paragraph
-        }
-        try:
-            md_output = self.convert_chain.run(
-                **llm_kwargs,
-                callbacks=callbacks,
-                stop=["Input:"]
-            )
-        except Exception as e:
-            element.add_intermediate_step('table-convert2MD', str(e))
+        token_checker: TokenChecker = inputs.get('token_checker')
+        if element.intermediate_step.get("table_format") == "markdown":
+            md_table = element.clean_text or ""
+            if not md_table.strip():
+                raise ContextError("Markdown table has no content")
+            element.add_intermediate_step("table-convert2MD", "[markdown]" + md_table)
         else:
-            element.add_intermediate_step('table-convert2MD', "[gpt.ft]"+md_output)
+            paragraph: str = TableMiningAgent.remove_attributes(element.content)
 
-        try:
-            md_table = self._parse_convert_output(md_output)
-            element.set_clean_text(md_table)
-            if token_checker:
-                update_token_checker(
-                    name_step='table-conver2MD',
-                    chain=self.convert_chain,
-                    token_checker=token_checker,
-                    llm_kwargs=llm_kwargs,
-                    llm_output=md_output,
-                )
-        except (TokenLimitError, UnboundLocalError):
+            llm_kwargs = {
+                'paragraph': paragraph
+            }
             try:
-                print("non-ft model try: due to token limit")
-                md_output = self.emergency_chain.run(
+                md_output = self.convert_chain.run(
                     **llm_kwargs,
                     callbacks=callbacks,
                     stop=["Input:"]
                 )
             except Exception as e:
                 element.add_intermediate_step('table-convert2MD', str(e))
-                raise LangchainError(e)
             else:
-                element.add_intermediate_step('table-convert2MD', "[gpt3.5]"+md_output)
+                element.add_intermediate_step('table-convert2MD', "[gpt.ft]"+md_output)
 
             try:
                 md_table = self._parse_convert_output(md_output)
                 element.set_clean_text(md_table)
-            except Exception as e:
-                element.add_intermediate_step('table-convert2MD', str(e))
-                raise TokenLimitError
-            else:
                 if token_checker:
                     update_token_checker(
                         name_step='table-conver2MD',
-                        chain=self.emergency_chain,
+                        chain=self.convert_chain,
                         token_checker=token_checker,
                         llm_kwargs=llm_kwargs,
                         llm_output=md_output,
                     )
+            except (TokenLimitError, UnboundLocalError):
+                try:
+                    print("non-ft model try: due to token limit")
+                    md_output = self.emergency_chain.run(
+                        **llm_kwargs,
+                        callbacks=callbacks,
+                        stop=["Input:"]
+                    )
+                except Exception as e:
+                    element.add_intermediate_step('table-convert2MD', str(e))
+                    raise LangchainError(e)
+                else:
+                    element.add_intermediate_step('table-convert2MD', "[gpt3.5]"+md_output)
+
+                try:
+                    md_table = self._parse_convert_output(md_output)
+                    element.set_clean_text(md_table)
+                except Exception as e:
+                    element.add_intermediate_step('table-convert2MD', str(e))
+                    raise TokenLimitError
+                else:
+                    if token_checker:
+                        update_token_checker(
+                            name_step='table-conver2MD',
+                            chain=self.emergency_chain,
+                            token_checker=token_checker,
+                            llm_kwargs=llm_kwargs,
+                            llm_output=md_output,
+                        )
 
         if md_table == "Empty content":
             table_type = "None"

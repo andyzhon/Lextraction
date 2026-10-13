@@ -53,6 +53,13 @@ chemical synthesis: {
 """
 chemical_vapor_deposition="""
 chemical vapor deposition: {
+    "deposition method":"",
+    "substrate":"",
+    "coating material":"",
+    "temperature":"",
+    "time":"",
+    "rf power":"",
+    "base pressure":"",
     "working pressure":"",
     "carrier gas name":"",
     "carrier gas flow rate":"",

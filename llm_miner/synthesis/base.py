@@ -1,4 +1,3 @@
-import ast
 import json
 import regex
 from typing import Any, Dict, List, Optional
@@ -16,11 +15,12 @@ from langchain.prompts.chat import (
 
 from llm_miner.synthesis.prompt import PROMPT_TYPE, PROMPT_STRUCT, FT_TYPE, FT_HUMAN
 from llm_miner.schema import Paragraph
-from llm_miner.error import StructuredFormatError, LangchainError, TokenLimitError
+from llm_miner.error import LangchainError
 from llm_miner.format import Formatter
 from llm_miner.pricing import TokenChecker, update_token_checker
 from llm_miner.utils import num_tokens_from_string
 from llm_miner.config import config
+from llm_miner.structured_output import parse_structured_output
 
 
 class SynthesisMiningAgent(Chain):
@@ -42,27 +42,10 @@ class SynthesisMiningAgent(Chain):
         run_manager.on_text(text, verbose=self.verbose, color="yellow")
 
     def _parse_output(self, output: str) -> List[Any]:
-        if regex.search(r"^\s*(```)?JSON", output) and not regex.search(
-            r"```\s*$", output
-        ):
-            raise TokenLimitError(
-                "Output does not finished before token limits", output
-            )
-
-        output = output.replace("```JSON", "")
-        output = output.replace("```", "")
-        output = output.strip()
-
         if regex.search(r"[Ii] do not know", output):
             return [output]
-        try:
-            data = ast.literal_eval(output)
-            if isinstance(data, list):
-                return data
-            else:
-                return [data]
-        except Exception as e:
-            raise StructuredFormatError(e, output)
+        data = parse_structured_output(output)
+        return data if isinstance(data, list) else [data]
 
     def reconstruct_paragraph(
         self, content: str, max_token: int, sep: str = "\n"

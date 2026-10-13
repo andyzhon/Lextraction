@@ -1,4 +1,3 @@
-import ast
 from typing import Any, Dict, List, Optional
 
 from langchain.base_language import BaseLanguageModel
@@ -13,10 +12,11 @@ from langchain.prompts.chat import (
 )
 
 from llm_miner.schema import Paragraph
-from llm_miner.error import StructuredFormatError, TokenLimitError, LangchainError
+from llm_miner.error import LangchainError
 from llm_miner.format import Formatter
 from llm_miner.table.crystal.prompt import CRYSTAL_CATEGORIZE, CRYSTAL_EXTRACT, FT_TYPE, FT_HUMAN
 from llm_miner.pricing import TokenChecker, update_token_checker
+from llm_miner.structured_output import parse_structured_output
 
 
 class CrystalTableAgent(Chain):
@@ -158,37 +158,10 @@ class CrystalTableAgent(Chain):
         return {"output": output}
 
     def _parse_output_props(self, output: str) -> Dict[str, str]:
-        output = output.replace("List:", "").strip()
-        try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e)
-        else:
-            return list_
+        return parse_structured_output(output)
 
     def _parse_output_json(self, output: str) -> Dict[str, str]:
-        try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            pass
-        else:
-            return list_
-
-        output = output.replace("Output:", "").strip()
-        output = output.replace("```JSON", "").strip()
-        try:
-            end_point = output.index("```")
-        except ValueError as e:
-            raise TokenLimitError(e)
-        else:
-            output = output.replace("```", "").strip()
-
-        try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e)
-        else:
-            return list_
+        return parse_structured_output(output)
 
     def _make_format(self, props):
         formatter = Formatter

@@ -1,4 +1,3 @@
-import ast
 from typing import Any, Dict, List, Optional
 import random
 
@@ -14,10 +13,11 @@ from langchain.prompts.chat import (
 )
 
 from llm_miner.schema import Paragraph
-from llm_miner.error import StructuredFormatError, TokenLimitError, LangchainError
+from llm_miner.error import StructuredFormatError, LangchainError
 from llm_miner.format import Formatter
 from llm_miner.table.property.prompt import PROPERTY_CATEGORIZE, PROPERTY_EXTRACT, FT_TYPE, FT_HUMAN
 from llm_miner.pricing import TokenChecker, update_token_checker
+from llm_miner.structured_output import parse_structured_output
 
 
 class PropertyTableAgent(Chain):
@@ -183,39 +183,15 @@ class PropertyTableAgent(Chain):
         return explained_props.strip()
 
     def _parse_output_props(self, output: str) -> Dict[str, str]:
-        output = output.replace("List:", "").strip()
-        try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e)
-        else:
-            return list_
+        return parse_structured_output(output)
 
     def _parse_output_json(self, output: str) -> Dict[str, str]:
         try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            pass
-        else:
-            return list_
-
-        output = output.replace("Output:", "").strip()
-        output = output.replace("```JSON", "").strip()
-        try:
-            end_point = output.index("```")
-        except ValueError as e:
-            raise TokenLimitError(e)
-        else:
-            output = output.replace("```", "").strip()
-        if "llipsis" in output:
-            return ["Ellipsis Error"]
-
-        try:
-            list_ = ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e)
-        else:
-            return list_
+            return parse_structured_output(output)
+        except StructuredFormatError:
+            if "llipsis" in output:
+                return ["Ellipsis Error"]
+            raise
 
     def _make_format(self, props):
         formatter = Formatter

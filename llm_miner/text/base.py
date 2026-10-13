@@ -1,4 +1,3 @@
-import ast
 import regex
 from typing import Any, Dict, List, Optional
 
@@ -16,8 +15,9 @@ from langchain.prompts.chat import (
 from llm_miner.text.prompt import PROMPT_TYPE, PROMPT_EXT, FT_TYPE, FT_HUMAN
 from llm_miner.schema import Paragraph
 from llm_miner.format import Formatter
-from llm_miner.error import StructuredFormatError, LangchainError, TokenLimitError
+from llm_miner.error import LangchainError
 from llm_miner.pricing import TokenChecker, update_token_checker
+from llm_miner.structured_output import parse_structured_output
 
 
 class TextMiningAgent(Chain):
@@ -39,18 +39,9 @@ class TextMiningAgent(Chain):
         run_manager.on_text(text, verbose=self.verbose, color="yellow")
 
     def _parse_output(self, output: str) -> Dict[str, str]:
-        if regex.search(r"^\s*```JSON", output) and not regex.search(r"```\s*$", output):
-            raise TokenLimitError('Output does not finished before token limits', output)
-        
-        output = output.replace("```JSON","")
-        output = output.replace("```","")
-        output = output.strip()
         if regex.search(r"[Ii] do not know", output):
             return [output]
-        try:
-            return ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e, output)
+        return parse_structured_output(output)
     
     def _call(
             self,
@@ -206,4 +197,3 @@ class TextMiningAgent(Chain):
             extract_chain=extract_chain,
             **kwargs
         )
-    

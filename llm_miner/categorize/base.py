@@ -1,4 +1,3 @@
-import ast
 from typing import Any, Dict, List, Optional
 
 from langchain.base_language import BaseLanguageModel
@@ -13,9 +12,10 @@ from langchain.prompts import PromptTemplate
 from langchain.callbacks.manager import CallbackManagerForChainRun
 
 from llm_miner.categorize.prompt import PROMPT_CATEGORIZE, FT_CATEGORIZE, FT_HUMAN
-from llm_miner.error import StructuredFormatError, ContextError, LangchainError
+from llm_miner.error import ContextError, LangchainError
 from llm_miner.schema import Paragraph
 from llm_miner.pricing import TokenChecker, update_token_checker
+from llm_miner.structured_output import parse_structured_output
 
 
 class CategorizeAgent(Chain):
@@ -37,11 +37,7 @@ class CategorizeAgent(Chain):
         run_manager.on_text(text, verbose=self.verbose, color="yellow")
 
     def _parse_output(self, output: str) -> Dict[str, str]:
-        output = output.replace("List:", "").strip()  # remove `List`
-        try:
-            return ast.literal_eval(output)
-        except Exception as e:
-            raise StructuredFormatError(e)
+        return parse_structured_output(output)
     
     def _call(
             self,

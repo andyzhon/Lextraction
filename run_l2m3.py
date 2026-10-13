@@ -11,17 +11,20 @@ from llm_miner.config import config
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (2, 3):
         sys.exit(
-            "用法: python run_l2m3.py 论文路径 出版商\n"
-            "例如: python run_l2m3.py data/paper.xml springer"
+            "用法: python run_l2m3.py 论文路径 [出版商]\n"
+            "Markdown: python run_l2m3.py data/paper.md\n"
+            "XML/HTML: python run_l2m3.py data/paper.xml springer"
         )
 
     paper_path = Path(sys.argv[1]).resolve()
-    publisher = sys.argv[2].lower()
+    publisher = sys.argv[2].lower() if len(sys.argv) == 3 else None
 
     if not paper_path.is_file():
         sys.exit(f"找不到论文: {paper_path}")
+    if publisher is None and paper_path.suffix.lower() not in {".md", ".markdown"}:
+        sys.exit("XML/HTML 文件需要指定出版商，例如 springer；Markdown 文件无需指定。")
 
     api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
