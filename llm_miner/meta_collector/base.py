@@ -405,9 +405,10 @@ class Results(Sequence, BaseModel):
             "unassigned_data": [d.to_dict() for d in self.unassigned_data],
         }
 
+
     def to_json(self, filepath) -> Dict[str, Any]:
-        with open(filepath, "w") as f:
-            json.dump(self.to_dict(), f)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> object:
