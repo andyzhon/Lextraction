@@ -8,7 +8,7 @@ from llm_miner.format import example_table
 from llm_miner.format import example_text
 from llm_miner.format import operation
 
-
+# Formatter 类把六个不同模块中的公开常量收集起来，每个类别都是一个Mapping对象
 class BaseFormatter(Mapping):
     data: Dict[str, str]
 
@@ -24,7 +24,7 @@ class BaseFormatter(Mapping):
     def list_keys(self):
         return list(self.data.keys())
 
-
+# 动态收集模块常量
 class BaseStucturedData(BaseFormatter):
     data: Dict[str, str] = {
         name: obj for name, obj in inspect.getmembers(st_data)
@@ -69,7 +69,7 @@ class BaseOperation(BaseFormatter):
         if isinstance(obj, str) and "__" not in name
     }
 
-
+# 将分散在不同模块中的常量收集到一个类中，方便统一访问
 class Formatter(object):
     structured_data = BaseStucturedData()
     explanation = BaseExplanation()
