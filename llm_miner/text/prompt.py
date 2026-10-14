@@ -1,4 +1,7 @@
-PROMPT_TYPE = """First, determine whether properties exist or not. Except for topology, crystal system, and space group, properties must have a float value. If a property does not have float value, do not extract it. If there is no property in the paragraph, please return an empty list.
+from llm_miner.format.extraction_rules import SAMPLE_RULES
+from llm_miner.format.battery import PROPERTIES
+
+PROMPT_TYPE = SAMPLE_RULES + """First, determine whether properties or test conditions exist. Except for topology, crystal system, space group and test_conditions, properties must have a reported numeric value (including ranges and bounds). If there is no property or test setup in the paragraph, please return an empty list.
 If properties exist, you must find all the properties in paragraphs. Names of properties must be one of following:
 {explanation}
 
@@ -8,7 +11,7 @@ You must follow below rules:
 - If a property you find lacks a value, please exclude it.
 - Do not be confused between gas adsorption and selectivity. Gas adsorption is a property that has a unit and selectivity is unitless. Even though there is a word "selectivity", it is not always selectivity. If there is a value with unit, it is gas adsorption.
 - In crystal system, there are triclinic, monoclinic, orthorhombic, tetragonal, trigonal, hexagonal, and cubic. If one of them exists in the paragraph, it means there is "crystal system" information.
-- If "TGA" or "TG" exists in the paragraph, it includes "decomposition_temperature".
+- TGA/TG alone does not establish a decomposition onset. Use thermal_event for reported weight-loss/oxygen-release temperatures and test_conditions for the measurement setup.
 - When property does not exist in the list, write "etc".
 
 If you are uncertain, please reply with "I do not know".
@@ -79,14 +82,14 @@ Paragraph: {paragraph}
 List:"""
 
 
-PROMPT_EXT = """Extract the information about {prop} mentioned in the paragraph. Follow the structured data in JSON format:
+PROMPT_EXT = SAMPLE_RULES + """Extract the information about {prop} mentioned in the paragraph. Follow the structured data in JSON format:
 {structured_data}
 
 You must follow below rules:
 - You must write all the information about {prop} in the paragraph.
 - Do not forge information that is not in the paragraph.
 - Do not write the information in the examples.
-- When property is "etc", do not extract {prop}.
+- When property is "etc", extract the reported numeric property using its actual property name, value, unit and condition.
 - Make a list that shows properties of each material. The list consists of several dictionaries of all materials. Each dictionary must include "meta":{{"name":"", "symbol":"", "chemical formula":""}}. ex) [{{"meta":{{"name":"", "symbol":"", "chemical formula":""}}, {structured_data}]
 - When material is expressed as a number, you must fill in "symbol" of "meta". ex) Paragraph: The corresponding BET surface area is 100 m2/g for 1. JSON: [{{"meta":{{"name":"", "symbol":"1", "chemical formula":""}}, "surface area": {{"type": "BET", "probe": "", "value": "100", "unit": "m2/g"}}}}]
 - "condition" means not only pressure, temperature, but specific details of property like crystal form.
@@ -113,3 +116,5 @@ FT_TYPE = (
 )
 
 FT_HUMAN = "{paragraph}"
+
+FT_TYPE += "\nAdditional supported properties: " + ", ".join(PROPERTIES) + SAMPLE_RULES

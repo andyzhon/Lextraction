@@ -1,8 +1,10 @@
 import pprint
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Any, Dict, Optional, Union
 from collections.abc import Sequence, Mapping
 import json
+import re
+from decimal import Decimal, InvalidOperation
 from llm_miner.schema import Paragraph
 from llm_miner.meta_collector.utils import format_chemical_formula, format_chemical_name
 
@@ -15,6 +17,11 @@ class Material(BaseModel):
     synonyms: Optional[List[str]] = None
     refcode: Optional[str] = None
     is_general: Optional[bool] = None
+    sample_id: Optional[str] = None
+    role: Optional[str] = None
+    substrate_formula: Optional[str] = None
+    coating_formula: Optional[str] = None
+    coating_amount: Optional[Dict[str, Any]] = None
 
     # @property
     # def clean_chemical_formula(
@@ -24,11 +31,25 @@ class Material(BaseModel):
     #     return formula, is_general
 
     def is_equal(self, other: object) -> bool:
+        if not isinstance(other, Material):
+            return False
+        if self.sample_id and other.sample_id and self.sample_id != other.sample_id:
+            return False
+        # An unspecified loading is not the same sample as a measured loading.
+        if self.coating_amount != other.coating_amount:
+            return False
+        for field in ("role", "substrate_formula", "coating_formula"):
+            left, right = getattr(self, field), getattr(other, field)
+            if left and right and left != right:
+                return False
+        if self.sample_id and self.sample_id == other.sample_id:
+            return True
         s_formula = self.chemical_formula
         o_formula = other.chemical_formula
 
         if self.name:
-            if self.name == other.name or self.name == other.symbol:
+            if (self._identity_name(self.name) == self._identity_name(other.name)
+                    or self.name == other.symbol):
                 if (
                     s_formula != o_formula
                     and self.formula_source == other.formula_source
@@ -38,8 +59,14 @@ class Material(BaseModel):
         if self.symbol:
             if self.symbol == other.symbol or self.symbol == other.name:
                 return True
-        else:
-            return False
+        return False
+
+    @staticmethod
+    def _identity_name(name):
+        if not name:
+            return None
+        name = re.sub(r"(?:[<>]=?|~|≈)?\s*\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*(?:wt\.?\s*%|mass\s*%)\s*", "", name)
+        return re.sub(r"\s+", " ", name).strip()
 
     def concatenate(self, others: object) -> None:  # before: concatenate_data
         # 같은 meta를 가지는 두 물질 정보를 합쳐서 하나의 물질 정보로 만들기 # should be revised
@@ -68,6 +95,38 @@ class Material(BaseModel):
             self.synonyms = others.synonyms
         if not self.refcode:
             self.refcode = others.refcode
+        for field in ("sample_id", "role", "substrate_formula", "coating_formula", "coating_amount"):
+            if not getattr(self, field):
+                setattr(self, field, getattr(others, field))
+
+    @staticmethod
+    def _coating_amount(data):
+        amount = data.get("coating amount", data.get("coating_amount"))
+        name = data.get("name") or ""
+        if not amount:
+            match = re.search(r"((?:[<>]=?|~|≈)?\s*\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?)\s*(wt\.?\s*%|mass\s*%)", name, re.I)
+            if match:
+                amount = {"value": match.group(1), "unit": "wt.%"}
+        if not amount:
+            return None
+        if not isinstance(amount, dict):
+            return {"value": str(amount), "unit": ""}
+        amount = dict(amount)
+        value = str(amount.get("value", "")).strip()
+        if not value:
+            return None
+        try:
+            value = format(Decimal(value).normalize(), "f")
+        except InvalidOperation:
+            pass  # Keep ranges and qualifiers; do not invent a single loading.
+        unit = str(amount.get("unit", "")).strip().lower()
+        if re.fullmatch(r"(?:wt\.?|mass)\s*%", unit):
+            unit = "wt.%"
+        result = {"value": value, "unit": unit}
+        for key in ("comparison", "is_approximate"):
+            if amount.get(key):
+                result[key] = amount[key]
+        return result
 
     @classmethod
     def from_data(
@@ -93,6 +152,11 @@ class Material(BaseModel):
             synonyms=data.get("synonyms"),
             refcode=refcode,
             is_general=is_general,
+            sample_id=data.get("sample id") or data.get("sample_id") or None,
+            role=data.get("role") or None,
+            substrate_formula=data.get("substrate formula") or data.get("substrate_formula") or None,
+            coating_formula=data.get("coating formula") or data.get("coating_formula") or None,
+            coating_amount=cls._coating_amount(data),
         )
 
     def to_dict(
@@ -106,6 +170,11 @@ class Material(BaseModel):
             "synonyms": self.synonyms,
             "refcode": self.refcode,
             "is_general": self.is_general,
+            "sample_id": self.sample_id,
+            "role": self.role,
+            "substrate_formula": self.substrate_formula,
+            "coating_formula": self.coating_formula,
+            "coating_amount": self.coating_amount,
         }
 
     def to_json(self, filepath) -> Dict[str, Any]:
@@ -122,6 +191,11 @@ class Material(BaseModel):
             synonyms=data["synonyms"],
             refcode=data["refcode"],
             is_general=data["is_general"],
+            sample_id=data.get("sample_id"),
+            role=data.get("role"),
+            substrate_formula=data.get("substrate_formula"),
+            coating_formula=data.get("coating_formula"),
+            coating_amount=cls._coating_amount(data),
         )
 
     @classmethod
@@ -213,7 +287,9 @@ class MinedData(Mapping, BaseModel):
     def concatenate(self, others: object, overwrite: bool = False) -> None:
         self.material.concatenate(others.material)
         for key, value in others.data.items():
-            if (not overwrite) and (key in self.data):
+            if (not overwrite) and isinstance(self.data.get(key), list) and isinstance(value, list):
+                self.data[key] = self.data[key] + [item for item in value if item not in self.data[key]]
+            elif (not overwrite) and (key in self.data):
                 idx = 1
                 new_key = f"{key}_{idx}"
                 while new_key in self.data:  # HAVE to fix.
@@ -285,6 +361,7 @@ class Results(Sequence, BaseModel):
     results: List[MinedData]
     matching_dict: Dict[int, Any]
     doi: Optional[str]
+    unassigned_data: List[MinedData] = Field(default_factory=list)
 
     def __getitem__(self, idx: int):
         return self.results[idx]
@@ -305,6 +382,9 @@ class Results(Sequence, BaseModel):
         print(self._to_string(print_origin_data))
 
     def append(self, data: MinedData, idx):  # before: categorize_by_equality
+        if not (data.name or data.symbol or data.material.sample_id or data.chemical_formula):
+            self.unassigned_data.append(data)
+            return
         for jdx, value in enumerate(self.results):
             if jdx not in self.matching_dict.keys():
                 self.matching_dict[jdx] = []
@@ -313,6 +393,7 @@ class Results(Sequence, BaseModel):
                 self.matching_dict[jdx].append(idx)
                 return
         self.results.append(data)
+        self.matching_dict.setdefault(len(self.results) - 1, [])
 
     def to_dict(
         self,
@@ -321,6 +402,7 @@ class Results(Sequence, BaseModel):
             "results": [d.to_dict() for d in self.results],
             "matching_dict": self.matching_dict,
             "doi": self.doi,
+            "unassigned_data": [d.to_dict() for d in self.unassigned_data],
         }
 
     def to_json(self, filepath) -> Dict[str, Any]:
@@ -333,6 +415,7 @@ class Results(Sequence, BaseModel):
             results=[MinedData.from_dict(d) for d in data["results"]],
             matching_dict=data["matching_dict"],
             doi=data["doi"],
+            unassigned_data=[MinedData.from_dict(d) for d in data.get("unassigned_data", [])],
         )
 
     @classmethod

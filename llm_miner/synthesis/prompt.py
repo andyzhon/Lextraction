@@ -42,7 +42,10 @@ You must follow rules below:
 - If there are more than two instances of a precursor, additive, surfactant, solution, solvent, or reducing agent, list all of them in a single dictionary.
 - Remember, a precursor is measured in units of mass, while a solution is measured in units of volume.
 - Never fabricate or add information that isn't present in the paragraph. Do not write the information in the example.
-- For coated materials, identify the substrate and coating in "meta" and "other properties" when stated in the paragraph.
+- For coated materials, identify the substrate and coating in "meta" and "other properties" when stated in the paragraph. Add "role", "substrate formula", "coating formula" and "coating amount" (a value/unit object) to meta. Keep composite notation such as ZnO/LiCoO2 intact.
+- Include the explicitly stated coating loading in the sample name. Use role "coated_material" for coating synthesis and "electrode" for electrode fabrication. Do not invent sample ids or loading/time pairs.
+- When extracting a process table, extract operations from the table and use nearby context only to identify the material and method. Do not import unrelated electrode fabrication operations into coating conditions.
+- List all explicitly reported coating times and flow rates; a flow in sccm is not a precursor mass. Do not invent a solvent to satisfy a field.
 - Distinguish coating preparation from electrode/cell fabrication. If both are described, put electrode fabrication in a separate material entry. Do not assign electrode drying conditions to the coating process.
 - Characterization, electrolyte immersion tests, electrochemical measurements and thermal analysis are not synthesis operations. Do not report their conditions as material preparation conditions.
 - If a range symbol like "4-6" is provided, produce separate results for each number in the range.

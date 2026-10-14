@@ -51,6 +51,7 @@ class LLMMiner(Chain):
 
         jr: JournalReader = inputs[self.input_key]
         token_checker: TokenChecker = inputs.get("token_checker") # TokenChecker用于L2M3的Token用量管理
+        jr.attach_table_context()
 
         for element in jr.elements: # 遍历所有论文元素
             try:
@@ -82,7 +83,7 @@ class LLMMiner(Chain):
         for element in jr.get_properties(): # 正文材料属性提取
             try:
                 output = self.property_agent.run(
-                    element=element, callbakcs=callbacks, token_checker=token_checker
+                    element=element, callbacks=callbacks, token_checker=token_checker
                 )
             except BaseMiningError as e:
                 element.set_data([str(e)])
@@ -93,7 +94,7 @@ class LLMMiner(Chain):
         for element in jr.get_tables(): # 表格数据提取
             try:
                 output = self.table_agent.run(
-                    element=element, callbakcs=callbacks, token_checker=token_checker
+                    element=element, callbacks=callbacks, token_checker=token_checker
                 )
             except BaseMiningError as e:
                 element.set_data([str(e)])

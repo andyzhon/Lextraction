@@ -17,6 +17,8 @@ from llm_miner.schema import Paragraph
 from llm_miner.table.categorize.base import CategorizeAgent
 from llm_miner.table.crystal.base import CrystalTableAgent
 from llm_miner.table.property.base import PropertyTableAgent
+from llm_miner.synthesis.base import SynthesisMiningAgent
+from llm_miner.table.routing import route_table
 from llm_miner.table.prompt import CONVERT2MD, FT_CONVERT, FT_HUMAN
 from llm_miner.pricing import TokenChecker, update_token_checker
 
@@ -28,6 +30,7 @@ class TableMiningAgent(Chain):
     categorize_agent: Chain
     crystal_table_agent: Chain
     property_table_agent: Chain
+    synthesis_table_agent: Optional[Chain] = None
     input_key: str = "element"
     output_key: str = "output"
 
@@ -74,6 +77,11 @@ class TableMiningAgent(Chain):
         categorize_agent = CategorizeAgent.from_llm(categorize_llm, **kwargs)
         crystal_table_agent = CrystalTableAgent.from_llm(crystal_table_type_llm, crystal_table_extract_llm, **kwargs)
         property_table_agent = PropertyTableAgent.from_llm(property_table_type_llm, property_table_extract_llm, **kwargs)
+        synthesis_type_llm = (property_table_extract_llm
+                              if property_table_type_llm.model_name.startswith('ft:')
+                              else property_table_type_llm)
+        synthesis_table_agent = SynthesisMiningAgent.from_llm(
+            synthesis_type_llm, property_table_extract_llm, **kwargs)
 
         return cls(
             convert_chain=convert_chain,
@@ -81,6 +89,7 @@ class TableMiningAgent(Chain):
             categorize_agent=categorize_agent,
             crystal_table_agent=crystal_table_agent,
             property_table_agent=property_table_agent,
+            synthesis_table_agent=synthesis_table_agent,
             **kwargs
         )
 
@@ -194,9 +203,17 @@ class TableMiningAgent(Chain):
                             llm_output=md_output,
                         )
 
+        context = element.intermediate_step.get("table_context") or element.intermediate_step.get("context_before")
+        override = route_table(md_table, context)
+        if context and md_table != "Empty content":
+            md_table = ("Nearby context (identity, method and explicitly shared conditions only):\n"
+                        + str(context) + "\n\nTable to extract:\n" + md_table)
+            element.set_clean_text(md_table)
         if md_table == "Empty content":
             table_type = "None"
-
+        elif override:
+            table_type = override
+            element.add_intermediate_step("table-categorize", "[routing]" + override)
         else:
             table_type = self.categorize_agent.run(
                 #paragraph=md_table,
@@ -207,7 +224,17 @@ class TableMiningAgent(Chain):
             table_type = str(table_type)
         element.set_classification(table_type)
 
-        if table_type == "Crystal":
+        if table_type == "Synthesis condition":
+            if self.synthesis_table_agent is None:
+                raise ContextError("A synthesis_table_agent is required for process tables")
+            synthesis_element = element.copy()
+            synthesis_element.classification = "synthesis condition"
+            output = self.synthesis_table_agent.run(
+                element=synthesis_element, callbacks=callbacks, token_checker=token_checker)
+            element.set_include_properties(synthesis_element.include_properties or [])
+            for name, value in synthesis_element.intermediate_step.items():
+                element.add_intermediate_step("table-" + name, value)
+        elif table_type == "Crystal":
             output = self.crystal_table_agent.run(
                 #paragraph=md_table,
                 element=element,
@@ -230,7 +257,7 @@ class TableMiningAgent(Chain):
         elif table_type == "None":
             output = ["Table seems to be empty"]
         else:
-            raise ContextError("Must be one of [Crytstal, Bond & Angle, Coordinate, Property, Elemental Composition]")
+            raise ContextError("Unknown table category: " + table_type)
 
         element.set_data(output)
         return {"output": output}

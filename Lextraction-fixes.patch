@@ -1,0 +1,1249 @@
+diff --git a/CHANGES_zh.md b/CHANGES_zh.md
+new file mode 100644
+--- /dev/null
++++ b/CHANGES_zh.md
+@@ -0,0 +1,49 @@
++# ZnO/LiCoO₂ 文献提取修复说明
++
++本版本基于 `andyzhon/Lextraction` 的提交 `dcce2115e5c80f93f4354a8612f08095f0be5eaf`。目录包含核心提取源码、运行入口、依赖文件和回归测试；不包含上游大型数据集及微调训练数据。
++
++## 已修改
++
++- Markdown 解析：以 `Fig. 5(a) shows...` 等图号引用开头的讨论正文不再并入图注；同段的正文与图片分别保留；真正的图注仍可关联图片。表格保留邻近文本，以供识别材料和实验方法。
++- 化学式：保留 `ZnO/LiCoO2` 等复合结构，不再错误转换成单一元素计数；使用 ASE 解析单相化学式的括号倍数和重复元素；未支持的分数化学计量、复合标记和无效文本保留原文并标记非通用式。
++- 字段：补充颗粒尺寸、包覆颗粒尺寸、包覆量、比容量、容量保持率、钴溶出量、热反应起始温度、相对起始温度变化、放热量、相对放热量、热失重事件和测试条件。正文与表格所需定义、结构、说明和示例一并注册。
++- 提示：恢复 `etc` 数值属性提取；区分粒径/晶粒、绝对温度/相对变化、TGA 失重事件/DSC 起始温度和材料制备/电极制备/测量条件；保留比较符和近似标记，不猜测图中数值或 OCR 单位。
++- 表格：新增 `Synthesis condition` 路由及合成条件提取；工艺参数不再被默认视为模拟参数。溶出钴浓度表按性能表处理，普通固体元素组成表的原有分类仍保留。
++- 样品合并：增加 sample_id、role、substrate_formula、coating_formula、coating_amount；不同包覆量、不同材料角色不混合；同一包覆量在名称或元数据中表达时可匹配。相同属性的多个测量保存在同一数组，并保留原始证据。
++- 空值：没有数值的定量属性转成 notes；零值、范围和不等式仍保留。明确标为颗粒尺寸的数据不再写入晶粒尺寸字段。
++- 无材料身份的记录：保留在 `unassigned_data`，不再作为匿名材料计入 `results`。可读取旧 JSON；新增字段不会要求修改旧输入文件。
++- 兼容性：修复 callbacks 拼写及可选 token_checker 的访问；固定依赖到本项目现有 LangChain 接口所支持、此次实际测试的版本。
++
++## 安装和验证
++
++在本目录中运行：
++
++```bash
++python3 -m venv .venv
++source .venv/bin/activate
++python -m pip install --upgrade pip
++python -m pip install -e .
++python -m unittest discover -s tests -v
++```
++
++支持 Python 3.9 及以上；本次在 Python 3.9 验证。新版本 Python 对旧 LangChain 依赖的兼容性未逐一验证。
++
++本次 **22 项离线测试通过**，包括实际 Markdown 解析、化学式处理、四种包覆量区分、正文/表格字段提取路由、结果合并与 JSON 往返。测试使用用户 JSON 中保存的论文片段，并用模型替身提供固定响应；不需要 API 密钥，也不会访问图片 URL。这些测试证明程序路径和数据保存正确，不是对真实模型准确率的测量。
++
++## 重新提取
++
++配置你自己的 `DEEPSEEK_API_KEY` 后：
++
++```bash
++python run_l2m3.py /path/to/paper.md
++```
++
++结果保存在 `results/` 中。运行入口沿用上游 DeepSeek 设置；本次没有修改模型提供方或替换模型。测试代码中的模型响应只是回归测试数据，不作为真实提取结果交付。
++
++原来的 `full.json` 保存的是旧解析/分类结果。要恢复被跳过的正文和表格，必须从原始 Markdown 重新运行，不能只重新保存旧 `result.json`。本次未调用收费模型 API，也未生成声称经过真实模型重提取的论文结果。
++
++## 输出变化
++
++`material` 新增可选身份字段；顶层新增 `unassigned_data`。同类测量可有多个数组项，替代追加 `_1` 等后缀的方式。已有依赖固定列或固定键的下游程序需要允许新增字段，并按每条测量的条件区分实验。
++
++包覆量未注明的通用记录仍单独保留，不会自动复制到 0.08、0.10、0.21、0.49 wt.% 各个样品。不同包覆时间与不同包覆量之间的对应关系，也不会仅凭两个列表自动推断。
+diff --git a/llm_miner/agent.py b/llm_miner/agent.py
+--- a/llm_miner/agent.py
++++ b/llm_miner/agent.py
+@@ -51,6 +51,7 @@
+ 
+         jr: JournalReader = inputs[self.input_key]
+         token_checker: TokenChecker = inputs.get("token_checker") # TokenChecker用于L2M3的Token用量管理
++        jr.attach_table_context()
+ 
+         for element in jr.elements: # 遍历所有论文元素
+             try:
+@@ -82,7 +83,7 @@
+         for element in jr.get_properties(): # 正文材料属性提取
+             try:
+                 output = self.property_agent.run(
+-                    element=element, callbakcs=callbacks, token_checker=token_checker
++                    element=element, callbacks=callbacks, token_checker=token_checker
+                 )
+             except BaseMiningError as e:
+                 element.set_data([str(e)])
+@@ -93,7 +94,7 @@
+         for element in jr.get_tables(): # 表格数据提取
+             try:
+                 output = self.table_agent.run(
+-                    element=element, callbakcs=callbacks, token_checker=token_checker
++                    element=element, callbacks=callbacks, token_checker=token_checker
+                 )
+             except BaseMiningError as e:
+                 element.set_data([str(e)])
+diff --git a/llm_miner/categorize/base.py b/llm_miner/categorize/base.py
+--- a/llm_miner/categorize/base.py
++++ b/llm_miner/categorize/base.py
+@@ -51,6 +51,7 @@
+         token_checker: TokenChecker = inputs.get('token_checker')
+ 
+         if para.type in self.labels:
++            para.set_classification(para.type)
+             self._write_log([para.type], _run_manager)
+             return {self.output_key: [para.type]}
+         
+diff --git a/llm_miner/categorize/prompt.py b/llm_miner/categorize/prompt.py
+--- a/llm_miner/categorize/prompt.py
++++ b/llm_miner/categorize/prompt.py
+@@ -2,9 +2,9 @@
+ 
+ You must follow rules below:
+ - You must return ["synthesis condition"] only when the paragraph includes several processes such as chemical synthesis, washing, and drying. It also includes specific IR or NMR information often. ex) "IR: 3137(m), 2359(m), 1655(s), 1493(s), 1262(s), 1210(s), 1148(s), 805(m), 668(m), 589(m).
+-- You must return ["property"] only when the paragraph includes "property type", "specific value of property" and "unit of the property". ex) surface area of 2500 m2/g
++- Return ["property"] for numeric material measurements or their experimental test setup, including battery cycling, cobalt dissolution, DSC and TGA conditions. These measurement conditions are not synthesis.
+ - If there are both "synthesis condition" and "property", return ["property", "synthesis condition"].
+-- When the paragraph does not include both synthesis condition and property, it means that there is no information. In this case, you must return ["else"].
++- Return ["else"] only when neither synthesis nor property/test-condition information is present.
+ - Only possible answer is ["property"], ["synthesis condition"], ["property","synthesis condition"] or ["else"]
+ - If "TGA" is in the paragraph, it means that it contains only "property", not "synthesis condition".
+ 
+@@ -37,8 +37,8 @@
+     "Categorize the paragraph given. "
+     "Select one or more categories from \"synthesis condition\" and \"property\". "
+     "If the paragraph does not fit into either of these categories, choose \"else\". "
+-    "\"property\" paragraph must include specific numerical value of the property. "
++    "\"property\" includes numeric measurements and their electrochemical/DSC/TGA test conditions. "
+     "ex) surface area of 2500 m2/g"
+ )
+ 
+-FT_HUMAN = "{paragraph}"
+\ No newline at end of file
++FT_HUMAN = "{paragraph}"
+diff --git a/llm_miner/format/battery.py b/llm_miner/format/battery.py
+new file mode 100644
+--- /dev/null
++++ b/llm_miner/format/battery.py
+@@ -0,0 +1,68 @@
++"""Battery measurements shared by text and table extraction formatters."""
++
++import json
++
++
++PROPERTIES = {
++    "particle_size": ("Particle diameter measured by microscopy or a particle-size analyser; not crystallite size.",
++                      {"value": "", "unit": "", "method": "", "condition": ""},
++                      {"value": "7", "unit": "µm", "method": "SEM"}),
++    "coating_particle_size": ("Diameter of particles making up a surface coating; not coating thickness or substrate crystallite size.",
++                              {"value": "", "unit": "", "component": "", "method": "", "condition": ""},
++                              {"value": "15-25", "unit": "nm", "component": "Al2O3", "method": "SEM"}),
++    "coating_amount": ("Measured coating loading; retain its mass/atomic fraction basis. Do not infer loading from time.",
++                       {"value": "", "unit": "", "method": "", "condition": ""},
++                       {"value": "0.2", "unit": "wt.%"}),
++    "specific_capacity": ("Charge or discharge capacity per mass, together with rate, voltage range and cycle number.",
++                          {"value": "", "unit": "", "kind": "", "cycles": "", "rate": "", "voltage_range": "", "temperature": "", "condition": ""},
++                          {"value": "150", "unit": "mAh/g", "kind": "discharge", "cycles": "1", "rate": "1 C", "voltage_range": "3.0-4.4 V"}),
++    "capacity_retention": ("Percentage of capacity remaining relative to a stated reference cycle; include cycle count and test conditions.",
++                           {"value": "", "unit": "", "cycles": "", "reference_cycle": "", "rate": "", "voltage_range": "", "temperature": "", "condition": ""},
++                           {"value": "70", "unit": "%", "cycles": "50", "reference_cycle": "1", "rate": "1 C", "voltage_range": "3.0-4.4 V"}),
++    "cobalt_dissolution": ("Concentration of cobalt dissolved/leached into electrolyte; not elemental composition of the solid.",
++                          {"value": "", "unit": "", "temperature": "", "time": "", "electrolyte": "", "sample_mass": "", "prior_cycles": "", "prior_rate": "", "method": "", "condition": ""},
++                          {"value": "0.2", "unit": "ppm", "comparison": "<", "temperature": "60 °C", "time": "7 days", "method": "AAS"}),
++    "thermal_onset_temperature": ("An explicitly reported absolute onset of a DSC/decomposition reaction, not a peak, relative shift, or general TGA loss event.",
++                                  {"value": "", "unit": "", "method": "", "event": "", "heating_rate": "", "atmosphere": "", "charged_voltage": "", "hold_time": "", "condition": ""},
++                                  {"value": "240", "unit": "°C", "method": "DSC", "event": "exothermic reaction onset"}),
++    "thermal_onset_shift": ("Relative change in reaction onset compared to a named reference; never report it as an absolute temperature.",
++                            {"value": "", "unit": "", "reference_sample": "", "direction": "", "method": "", "condition": ""},
++                            {"value": "12", "unit": "°C", "comparison": ">=", "reference_sample": "bare LiCoO2", "direction": "higher", "method": "DSC"}),
++    "heat_release": ("Absolute heat released in DSC, with reported units; not heat capacity or a relative peak-area ratio.",
++                     {"value": "", "unit": "", "method": "", "heating_rate": "", "condition": ""},
++                     {"value": "100", "unit": "J/g", "method": "DSC"}),
++    "relative_heat_release": ("Ratio of DSC integrated peak area/heat to a named reference. Preserve inequalities and do not invent J/g.",
++                              {"value": "", "unit": "", "reference_sample": "", "quantity": "", "method": "", "condition": ""},
++                              {"value": "0.3", "comparison": "<", "unit": "ratio", "reference_sample": "bare LiCoO2", "quantity": "integrated peak area", "method": "DSC"}),
++    "thermal_event": ("A reported TGA weight-loss/oxygen-release event. A general observation must stay with a material group and must not be assigned to every sample as an onset.",
++                      {"value": "", "unit": "", "event": "", "method": "", "heating_rate": "", "atmosphere": "", "condition": ""},
++                      {"value": "260", "unit": "°C", "is_approximate": True, "event": "oxygen release / major weight loss", "method": "TGA"}),
++    "test_conditions": ("Electrochemical/DSC/TGA measurement setup, including shared conditions; not material synthesis.",
++                        {"test_type": "", "cell_type": "", "rate": "", "voltage_range": "", "charged_voltage": "", "hold_time": "", "heating_rate": "", "atmosphere": "", "electrolyte": "", "condition": ""},
++                        {"test_type": "TGA", "heating_rate": "10 °C/min", "atmosphere": "argon"}),
++}
++
++
++def register(formatter):
++    """Register all resources together so a new property cannot be silently skipped."""
++    for key, (description, fields, example_value) in PROPERTIES.items():
++        label = key.replace("_", " ")
++        fields = dict(fields, comparison="", is_approximate=None, evidence="")
++        formatter.structured_data.data[key] = json.dumps({label: [fields]}, ensure_ascii=False)[1:-1]
++        formatter.explanation.data[key] = description
++        formatter.information.data[key] = (
++            description + " Preserve comparisons (<, <=, >, >=), approximate values, "
++            "and the exact sample loading. Fill evidence with a verbatim supporting sentence. "
++            "Leave unreported fields empty; never infer graph values or repair OCR units by guessing.")
++        record = {"meta": {"name": "0.2 wt.% Al2O3-coated LiCoO2", "chemical formula": "Al2O3/LiCoO2",
++                           "role": "coated_material", "substrate formula": "LiCoO2",
++                           "coating formula": "Al2O3", "coating amount": {"value": "0.2", "unit": "wt.%"}},
++                  label: [example_value]}
++        sentence = (f"For 0.2 wt.% Al2O3-coated LiCoO2, the reported {label} is "
++                    + json.dumps(example_value, ensure_ascii=False) + ".")
++        formatter.example_text.data[key] = "Paragraph: " + sentence + "\nJSON: " + json.dumps([record], ensure_ascii=False)
++        formatter.example_table.data["battery_" + key] = {
++            "contain": [label],
++            "content": f"Input:\n| Sample | {label} |\n|---|---|\n| 0.2 wt.% Al2O3-coated LiCoO2 | {json.dumps(example_value, ensure_ascii=False)} |\nOutput: " + json.dumps([record], ensure_ascii=False),
++            "output": json.dumps([record], ensure_ascii=False),
++        }
+diff --git a/llm_miner/format/extraction_rules.py b/llm_miner/format/extraction_rules.py
+new file mode 100644
+--- /dev/null
++++ b/llm_miner/format/extraction_rules.py
+@@ -0,0 +1,19 @@
++SAMPLE_RULES = """
++Sample and evidence rules:
++- Keep bare material, coated material, electrode fabrication and material groups distinct.
++- Use the meta fields in the supplied format. Record coating amount with its stated unit;
++  use the same sample name across text and tables. Include loading in a coated sample name.
++- For an unspecified coating loading, keep a generic coated-material record. Do not copy a
++  generic statement to every loading or infer loading/time pairs from two separate lists.
++- Keep substrate formula and coating formula separate. ZnO/LiCoO2 denotes a coating
++  composite, not a single stoichiometric compound. Do not invent a sample id.
++- Preserve <, <=, >, >= and approximate values; do not turn bounds into exact measurements.
++- Include test conditions only when supported. Distinguish DSC onset, peak temperature,
++  relative onset shift, TGA weight-loss/oxygen-release events and integrated peak-area ratios.
++- Do not interpret particle diameter as crystallite size, coating thickness or XRD size.
++- A general thermal event belongs to a material_group, not to every individual sample.
++- Do not output quantitative property entries with missing values. Retain qualitative
++  observations separately as notes. Never guess values from figures or repair OCR units.
++- For each measurement provide evidence containing a verbatim supporting excerpt when
++  the format includes that field. Never copy facts from examples to the input results.
++"""
+diff --git a/llm_miner/format/formatter.py b/llm_miner/format/formatter.py
+--- a/llm_miner/format/formatter.py
++++ b/llm_miner/format/formatter.py
+@@ -88,3 +88,7 @@
+             'example_text',
+             'operation'
+         ]
++
++
++from llm_miner.format.battery import register
++register(Formatter)
+diff --git a/llm_miner/format/structured_data.py b/llm_miner/format/structured_data.py
+--- a/llm_miner/format/structured_data.py
++++ b/llm_miner/format/structured_data.py
+@@ -3,6 +3,11 @@
+     "name": "",
+     "symbol": "",  # ex) 1a
+     "chemical formula": "",
++    "sample id": "",  # only when explicitly supplied by the article
++    "role": "",  # bare_material, coated_material, electrode, material_group
++    "substrate formula": "",
++    "coating formula": "",
++    "coating amount": {"value": "", "unit": ""},
+ }
+ """
+ 
+@@ -376,6 +381,9 @@
+         "value": "",
+         "unit": "",
+         "condition": "",
++        "comparison": "",
++        "is_approximate": null,
++        "evidence": "",
+     }, ...
+ ]
+ """
+diff --git a/llm_miner/meta_collector/base.py b/llm_miner/meta_collector/base.py
+--- a/llm_miner/meta_collector/base.py
++++ b/llm_miner/meta_collector/base.py
+@@ -1,8 +1,10 @@
+ import pprint
+-from pydantic import BaseModel
++from pydantic import BaseModel, Field
+ from typing import List, Any, Dict, Optional, Union
+ from collections.abc import Sequence, Mapping
+ import json
++import re
++from decimal import Decimal, InvalidOperation
+ from llm_miner.schema import Paragraph
+ from llm_miner.meta_collector.utils import format_chemical_formula, format_chemical_name
+ 
+@@ -15,6 +17,11 @@
+     synonyms: Optional[List[str]] = None
+     refcode: Optional[str] = None
+     is_general: Optional[bool] = None
++    sample_id: Optional[str] = None
++    role: Optional[str] = None
++    substrate_formula: Optional[str] = None
++    coating_formula: Optional[str] = None
++    coating_amount: Optional[Dict[str, Any]] = None
+ 
+     # @property
+     # def clean_chemical_formula(
+@@ -24,11 +31,25 @@
+     #     return formula, is_general
+ 
+     def is_equal(self, other: object) -> bool:
++        if not isinstance(other, Material):
++            return False
++        if self.sample_id and other.sample_id and self.sample_id != other.sample_id:
++            return False
++        # An unspecified loading is not the same sample as a measured loading.
++        if self.coating_amount != other.coating_amount:
++            return False
++        for field in ("role", "substrate_formula", "coating_formula"):
++            left, right = getattr(self, field), getattr(other, field)
++            if left and right and left != right:
++                return False
++        if self.sample_id and self.sample_id == other.sample_id:
++            return True
+         s_formula = self.chemical_formula
+         o_formula = other.chemical_formula
+ 
+         if self.name:
+-            if self.name == other.name or self.name == other.symbol:
++            if (self._identity_name(self.name) == self._identity_name(other.name)
++                    or self.name == other.symbol):
+                 if (
+                     s_formula != o_formula
+                     and self.formula_source == other.formula_source
+@@ -38,8 +59,14 @@
+         if self.symbol:
+             if self.symbol == other.symbol or self.symbol == other.name:
+                 return True
+-        else:
+-            return False
++        return False
++
++    @staticmethod
++    def _identity_name(name):
++        if not name:
++            return None
++        name = re.sub(r"(?:[<>]=?|~|≈)?\s*\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*(?:wt\.?\s*%|mass\s*%)\s*", "", name)
++        return re.sub(r"\s+", " ", name).strip()
+ 
+     def concatenate(self, others: object) -> None:  # before: concatenate_data
+         # 같은 meta를 가지는 두 물질 정보를 합쳐서 하나의 물질 정보로 만들기 # should be revised
+@@ -68,6 +95,38 @@
+             self.synonyms = others.synonyms
+         if not self.refcode:
+             self.refcode = others.refcode
++        for field in ("sample_id", "role", "substrate_formula", "coating_formula", "coating_amount"):
++            if not getattr(self, field):
++                setattr(self, field, getattr(others, field))
++
++    @staticmethod
++    def _coating_amount(data):
++        amount = data.get("coating amount", data.get("coating_amount"))
++        name = data.get("name") or ""
++        if not amount:
++            match = re.search(r"((?:[<>]=?|~|≈)?\s*\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?)\s*(wt\.?\s*%|mass\s*%)", name, re.I)
++            if match:
++                amount = {"value": match.group(1), "unit": "wt.%"}
++        if not amount:
++            return None
++        if not isinstance(amount, dict):
++            return {"value": str(amount), "unit": ""}
++        amount = dict(amount)
++        value = str(amount.get("value", "")).strip()
++        if not value:
++            return None
++        try:
++            value = format(Decimal(value).normalize(), "f")
++        except InvalidOperation:
++            pass  # Keep ranges and qualifiers; do not invent a single loading.
++        unit = str(amount.get("unit", "")).strip().lower()
++        if re.fullmatch(r"(?:wt\.?|mass)\s*%", unit):
++            unit = "wt.%"
++        result = {"value": value, "unit": unit}
++        for key in ("comparison", "is_approximate"):
++            if amount.get(key):
++                result[key] = amount[key]
++        return result
+ 
+     @classmethod
+     def from_data(
+@@ -93,6 +152,11 @@
+             synonyms=data.get("synonyms"),
+             refcode=refcode,
+             is_general=is_general,
++            sample_id=data.get("sample id") or data.get("sample_id") or None,
++            role=data.get("role") or None,
++            substrate_formula=data.get("substrate formula") or data.get("substrate_formula") or None,
++            coating_formula=data.get("coating formula") or data.get("coating_formula") or None,
++            coating_amount=cls._coating_amount(data),
+         )
+ 
+     def to_dict(
+@@ -106,6 +170,11 @@
+             "synonyms": self.synonyms,
+             "refcode": self.refcode,
+             "is_general": self.is_general,
++            "sample_id": self.sample_id,
++            "role": self.role,
++            "substrate_formula": self.substrate_formula,
++            "coating_formula": self.coating_formula,
++            "coating_amount": self.coating_amount,
+         }
+ 
+     def to_json(self, filepath) -> Dict[str, Any]:
+@@ -122,6 +191,11 @@
+             synonyms=data["synonyms"],
+             refcode=data["refcode"],
+             is_general=data["is_general"],
++            sample_id=data.get("sample_id"),
++            role=data.get("role"),
++            substrate_formula=data.get("substrate_formula"),
++            coating_formula=data.get("coating_formula"),
++            coating_amount=cls._coating_amount(data),
+         )
+ 
+     @classmethod
+@@ -213,7 +287,9 @@
+     def concatenate(self, others: object, overwrite: bool = False) -> None:
+         self.material.concatenate(others.material)
+         for key, value in others.data.items():
+-            if (not overwrite) and (key in self.data):
++            if (not overwrite) and isinstance(self.data.get(key), list) and isinstance(value, list):
++                self.data[key] = self.data[key] + [item for item in value if item not in self.data[key]]
++            elif (not overwrite) and (key in self.data):
+                 idx = 1
+                 new_key = f"{key}_{idx}"
+                 while new_key in self.data:  # HAVE to fix.
+@@ -285,6 +361,7 @@
+     results: List[MinedData]
+     matching_dict: Dict[int, Any]
+     doi: Optional[str]
++    unassigned_data: List[MinedData] = Field(default_factory=list)
+ 
+     def __getitem__(self, idx: int):
+         return self.results[idx]
+@@ -305,6 +382,9 @@
+         print(self._to_string(print_origin_data))
+ 
+     def append(self, data: MinedData, idx):  # before: categorize_by_equality
++        if not (data.name or data.symbol or data.material.sample_id or data.chemical_formula):
++            self.unassigned_data.append(data)
++            return
+         for jdx, value in enumerate(self.results):
+             if jdx not in self.matching_dict.keys():
+                 self.matching_dict[jdx] = []
+@@ -313,6 +393,7 @@
+                 self.matching_dict[jdx].append(idx)
+                 return
+         self.results.append(data)
++        self.matching_dict.setdefault(len(self.results) - 1, [])
+ 
+     def to_dict(
+         self,
+@@ -321,6 +402,7 @@
+             "results": [d.to_dict() for d in self.results],
+             "matching_dict": self.matching_dict,
+             "doi": self.doi,
++            "unassigned_data": [d.to_dict() for d in self.unassigned_data],
+         }
+ 
+     def to_json(self, filepath) -> Dict[str, Any]:
+@@ -333,6 +415,7 @@
+             results=[MinedData.from_dict(d) for d in data["results"]],
+             matching_dict=data["matching_dict"],
+             doi=data["doi"],
++            unassigned_data=[MinedData.from_dict(d) for d in data.get("unassigned_data", [])],
+         )
+ 
+     @classmethod
+diff --git a/llm_miner/meta_collector/utils.py b/llm_miner/meta_collector/utils.py
+--- a/llm_miner/meta_collector/utils.py
++++ b/llm_miner/meta_collector/utils.py
+@@ -2,11 +2,9 @@
+ from typing import List, Union
+ 
+ from ase.data import chemical_symbols
++from ase.formula import Formula
+ 
+-if "X" in chemical_symbols:
+-    chemical_symbols.remove("X")
+-chemical_symbols += ["D", "T"]
+-chemical_symbols = list(set(chemical_symbols))
++chemical_symbols = set(chemical_symbols) - {"X"} | {"D", "T"}
+ 
+ 
+ def format_chemical_name(input_string: str) -> str:
+@@ -80,31 +78,19 @@
+     for sub, normal in subscript_mapping.items():
+         s = s.replace(sub, normal)
+ 
+-    s = s.replace("(", "")
+-    s = s.replace(")", "")
+-    s = re.sub(r"\s*\u22C5\d+\w+", "", s)
+-
+-    # "[" 또는 "]" 있으면 일반적인 형태가 아님
+-    if "[" in s or "]" in s:
++    s = re.sub(r"\s+", "", s)
++    # Preserve composite, coating, hydrate and non-stoichiometric notation.
++    # A bag of regex matches cannot establish a single chemical formula.
++    if not re.fullmatch(r"(?:[A-Z][a-z]?\d*|\(|\)\d*)+", s):
+         return _s, False
+-
+-    elements = re.findall(r"([A-Z][a-z]?)(\d*\.?\d*)", s)
+-    # atom type이 ase database 안에 없으면 일반적인 형태가 아님
+-    for elem, _ in elements:
+-        if elem not in chemical_symbols:
+-            return _s, False
+-
+-    new_string = " ".join(
+-        [f"{elem}{count if count else '1'}" for elem, count in elements]
+-    )
+-
+-    # 비어있어도 일반적인 형태라고 할 순 없음
+-    if not new_string:
++    try:
++        counts = Formula(s).count()
++    except (ValueError, AssertionError, IndexError):
+         return _s, False
+-
+-    # 알파벳 순서로 sorting
+-    new_string = " ".join(sorted(new_string.split(" ")))
+-    return new_string, True
++    if not counts or any(elem not in chemical_symbols or count <= 0
++                         for elem, count in counts.items()):
++        return _s, False
++    return " ".join(f"{elem}{count}" for elem, count in sorted(counts.items())), True
+ 
+ 
+ def flatten_list_of_dicts(data: List[Union[dict, list]]) -> List[dict]:
+diff --git a/llm_miner/parser/markdown.py b/llm_miner/parser/markdown.py
+--- a/llm_miner/parser/markdown.py
++++ b/llm_miner/parser/markdown.py
+@@ -80,7 +80,15 @@
+     @staticmethod
+     def _caption(text, kind):
+         labels = r"(?:Table|表)" if kind == "table" else r"(?:Fig(?:ure)?\.?|图)"
+-        return bool(re.match(r"^" + labels + r"\s*(?:S?\d|[一二三四五六七八九十])", text, re.I))
++        match = re.match(r"^" + labels + r"\s*(?:S?\d+|[一二三四五六七八九十]+)(?:\s*\([a-z]\))?", text, re.I)
++        if not match:
++            return False
++        # A reference introducing a discussion paragraph is not a caption.
++        rest = text[match.end():].lstrip(" .:：")
++        return not re.match(
++            r"(?:shows?|illustrates?|reveals?|demonstrates?|presents?|compares?|"
++            r"indicates?|depicts?|summari[sz]es?|suggests?|displays?|provides?|"
++            r"is\s+(?:shown|presented)|给出|显示|表明|说明|展示)\b", rest, re.I)
+ 
+     @classmethod
+     def parsing(cls, document):
+@@ -92,6 +100,11 @@
+             text = text.strip()
+             if kind == "text" and not text:
+                 return
++            # Keep neighbouring prose available for table identity and routing.
++            context = {}
++            if kind == "table" and elements and elements[-1].type == "text":
++                context = {"context_before": elements[-1].clean_text,
++                           "context_before_idx": str(elements[-1].idx)}
+             # Attach a labelled caption immediately before/after a table or image.
+             if kind in {"table", "figure"} and elements:
+                 previous = elements[-1]
+@@ -110,6 +123,7 @@
+                         previous.clean_text = (previous.clean_text + "\n\n" + text).strip()
+                     return
+             steps = {"table_format": table_format} if table_format else {}
++            steps.update(context)
+             element = Paragraph(idx=len(elements) + 1, type=kind,
+                                 content=source.strip(), clean_text=text,
+                                 intermediate_step=steps)
+@@ -136,13 +150,20 @@
+                                for c in inline.children or []
+                                if c.type == "html_inline" and re.match(r"<img\b", c.content, re.I)]
+                 non_image_text = cls._inline_text(inline.children, include_images=False)
+-                kind = ("figure" if (images or html_images) and (not non_image_text or
+-                        cls._caption(non_image_text, "figure")) else "text")
++                sources = ([image.attrGet("src") for image in images]
++                           + [image.get("src") for image in html_images])
++                if sources and non_image_text and not cls._caption(non_image_text, "figure"):
++                    # Mixed prose/image paragraphs need two independent routes.
++                    add("text", source, non_image_text)
++                    element = add("figure", "\n\n".join(
++                        f"![image]({src})" for src in sources), "image")
++                    element.intermediate_step["image_sources"] = sources
++                    i += 3
++                    continue
++                kind = "figure" if sources else "text"
+                 element = add(kind, source, text)
+                 if kind == "figure":
+-                    element.intermediate_step["image_sources"] = (
+-                        [image.attrGet("src") for image in images]
+-                        + [image.get("src") for image in html_images])
++                    element.intermediate_step["image_sources"] = sources
+                 i += 3
+                 continue
+             if token.type in {"fence", "code_block", "math_block", "math_block_label"}:
+diff --git a/llm_miner/reader.py b/llm_miner/reader.py
+--- a/llm_miner/reader.py
++++ b/llm_miner/reader.py
+@@ -104,6 +104,17 @@
+         with open(filepath, "w", encoding="utf-8") as f:
+             json.dump(self.to_dict(), f, ensure_ascii=False)
+ 
++    def attach_table_context(self):
++        """Carry nearby source text through reconstruction without merging it into a table."""
++        for position, element in enumerate(self.elements):
++            if element.type != "table":
++                continue
++            nearby = [e for e in self.elements[max(0, position - 2):position] if e.type == "text"]
++            if nearby:
++                element.intermediate_step["table_context"] = "\n\n".join(
++                    f"[element {e.idx}] {e.clean_text or e.content}" for e in nearby)[-12000:]
++                element.intermediate_step["table_context_idx"] = [str(e.idx) for e in nearby]
++
+     def reconstruct(self, model_name: str = "gpt-4") -> None: # 重新组织论文段落
+         if self.cln_elements:  # clear cln_elements
+             self.cln_elements = Elements.empty()
+diff --git a/llm_miner/synthesis/prompt.py b/llm_miner/synthesis/prompt.py
+--- a/llm_miner/synthesis/prompt.py
++++ b/llm_miner/synthesis/prompt.py
+@@ -42,7 +42,10 @@
+ - If there are more than two instances of a precursor, additive, surfactant, solution, solvent, or reducing agent, list all of them in a single dictionary.
+ - Remember, a precursor is measured in units of mass, while a solution is measured in units of volume.
+ - Never fabricate or add information that isn't present in the paragraph. Do not write the information in the example.
+-- For coated materials, identify the substrate and coating in "meta" and "other properties" when stated in the paragraph.
++- For coated materials, identify the substrate and coating in "meta" and "other properties" when stated in the paragraph. Add "role", "substrate formula", "coating formula" and "coating amount" (a value/unit object) to meta. Keep composite notation such as ZnO/LiCoO2 intact.
++- Include the explicitly stated coating loading in the sample name. Use role "coated_material" for coating synthesis and "electrode" for electrode fabrication. Do not invent sample ids or loading/time pairs.
++- When extracting a process table, extract operations from the table and use nearby context only to identify the material and method. Do not import unrelated electrode fabrication operations into coating conditions.
++- List all explicitly reported coating times and flow rates; a flow in sccm is not a precursor mass. Do not invent a solvent to satisfy a field.
+ - Distinguish coating preparation from electrode/cell fabrication. If both are described, put electrode fabrication in a separate material entry. Do not assign electrode drying conditions to the coating process.
+ - Characterization, electrolyte immersion tests, electrochemical measurements and thermal analysis are not synthesis operations. Do not report their conditions as material preparation conditions.
+ - If a range symbol like "4-6" is provided, produce separate results for each number in the range.
+diff --git a/llm_miner/table/base.py b/llm_miner/table/base.py
+--- a/llm_miner/table/base.py
++++ b/llm_miner/table/base.py
+@@ -17,6 +17,8 @@
+ from llm_miner.table.categorize.base import CategorizeAgent
+ from llm_miner.table.crystal.base import CrystalTableAgent
+ from llm_miner.table.property.base import PropertyTableAgent
++from llm_miner.synthesis.base import SynthesisMiningAgent
++from llm_miner.table.routing import route_table
+ from llm_miner.table.prompt import CONVERT2MD, FT_CONVERT, FT_HUMAN
+ from llm_miner.pricing import TokenChecker, update_token_checker
+ 
+@@ -28,6 +30,7 @@
+     categorize_agent: Chain
+     crystal_table_agent: Chain
+     property_table_agent: Chain
++    synthesis_table_agent: Optional[Chain] = None
+     input_key: str = "element"
+     output_key: str = "output"
+ 
+@@ -74,6 +77,11 @@
+         categorize_agent = CategorizeAgent.from_llm(categorize_llm, **kwargs)
+         crystal_table_agent = CrystalTableAgent.from_llm(crystal_table_type_llm, crystal_table_extract_llm, **kwargs)
+         property_table_agent = PropertyTableAgent.from_llm(property_table_type_llm, property_table_extract_llm, **kwargs)
++        synthesis_type_llm = (property_table_extract_llm
++                              if property_table_type_llm.model_name.startswith('ft:')
++                              else property_table_type_llm)
++        synthesis_table_agent = SynthesisMiningAgent.from_llm(
++            synthesis_type_llm, property_table_extract_llm, **kwargs)
+ 
+         return cls(
+             convert_chain=convert_chain,
+@@ -81,6 +89,7 @@
+             categorize_agent=categorize_agent,
+             crystal_table_agent=crystal_table_agent,
+             property_table_agent=property_table_agent,
++            synthesis_table_agent=synthesis_table_agent,
+             **kwargs
+         )
+ 
+@@ -194,9 +203,17 @@
+                             llm_output=md_output,
+                         )
+ 
++        context = element.intermediate_step.get("table_context") or element.intermediate_step.get("context_before")
++        override = route_table(md_table, context)
++        if context and md_table != "Empty content":
++            md_table = ("Nearby context (identity, method and explicitly shared conditions only):\n"
++                        + str(context) + "\n\nTable to extract:\n" + md_table)
++            element.set_clean_text(md_table)
+         if md_table == "Empty content":
+             table_type = "None"
+-
++        elif override:
++            table_type = override
++            element.add_intermediate_step("table-categorize", "[routing]" + override)
+         else:
+             table_type = self.categorize_agent.run(
+                 #paragraph=md_table,
+@@ -207,7 +224,17 @@
+             table_type = str(table_type)
+         element.set_classification(table_type)
+ 
+-        if table_type == "Crystal":
++        if table_type == "Synthesis condition":
++            if self.synthesis_table_agent is None:
++                raise ContextError("A synthesis_table_agent is required for process tables")
++            synthesis_element = element.copy()
++            synthesis_element.classification = "synthesis condition"
++            output = self.synthesis_table_agent.run(
++                element=synthesis_element, callbacks=callbacks, token_checker=token_checker)
++            element.set_include_properties(synthesis_element.include_properties or [])
++            for name, value in synthesis_element.intermediate_step.items():
++                element.add_intermediate_step("table-" + name, value)
++        elif table_type == "Crystal":
+             output = self.crystal_table_agent.run(
+                 #paragraph=md_table,
+                 element=element,
+@@ -230,7 +257,7 @@
+         elif table_type == "None":
+             output = ["Table seems to be empty"]
+         else:
+-            raise ContextError("Must be one of [Crytstal, Bond & Angle, Coordinate, Property, Elemental Composition]")
++            raise ContextError("Unknown table category: " + table_type)
+ 
+         element.set_data(output)
+         return {"output": output}
+diff --git a/llm_miner/table/categorize/base.py b/llm_miner/table/categorize/base.py
+--- a/llm_miner/table/categorize/base.py
++++ b/llm_miner/table/categorize/base.py
+@@ -20,7 +20,7 @@
+ 
+ class CategorizeAgent(Chain):
+     categorize_chain: LLMChain
+-    labels: List[str] = ["Crystal", "Bond & Angle", "Coordinate", "Property", "Elemental Composition"]
++    labels: List[str] = ["Crystal", "Bond & Angle", "Coordinate", "Property", "Elemental Composition", "Synthesis condition"]
+     input_key: str = "element"
+     output_key: str = "output"
+ 
+@@ -55,7 +55,7 @@
+ 
+         element: Paragraph = inputs[self.input_key]
+         para: str = element.clean_text
+-        token_checker: TokenChecker = inputs['token_checker']
++        token_checker: TokenChecker = inputs.get('token_checker')
+ 
+         llm_kwargs = {
+             'paragraph': para,
+diff --git a/llm_miner/table/categorize/prompt.py b/llm_miner/table/categorize/prompt.py
+--- a/llm_miner/table/categorize/prompt.py
++++ b/llm_miner/table/categorize/prompt.py
+@@ -1,6 +1,8 @@
+-PROMPT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property"].
++PROMPT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property", "Synthesis condition"].
+ 
+ You must follow rules below:
++- Return "Synthesis condition" for experimental preparation/coating process parameters, such as RF power, gas flow rates, deposition time and reactor pressure. These are not computer simulation parameters.
++- Dissolved/leached Co concentration in electrolyte is a stability property: return "Property", not "Elemental Composition". The latter refers to composition of a solid material.
+ - Typical "Crystal" markdown table includes lattice parameter, spacegroup and etc. "Crystal" table is mostly comprised of crystal information. In that case, return "Crystal".
+ - If the markdown table is mostly comprised of bond or angle information of specific materials, return "Bond & Angle".
+ - If the markdown table is mostly comprised of coorination information of specific materials, return "Coordinate".
+@@ -184,7 +186,7 @@
+ Output:"""
+ 
+ 
+-FT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property"]."""
++FT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property", "Synthesis condition"]. Preparation/coating process parameters are Synthesis condition, not simulation parameters. Dissolved/leached cobalt concentration in electrolyte is Property, not Elemental Composition."""
+ 
+ 
+ FT_HUMAN = "{paragraph}"
+diff --git a/llm_miner/table/property/base.py b/llm_miner/table/property/base.py
+--- a/llm_miner/table/property/base.py
++++ b/llm_miner/table/property/base.py
+@@ -13,6 +13,7 @@
+ )
+ 
+ from llm_miner.schema import Paragraph
++from llm_miner.validation import normalize_measurements
+ from llm_miner.error import StructuredFormatError, LangchainError
+ from llm_miner.format import Formatter
+ from llm_miner.table.property.prompt import PROPERTY_CATEGORIZE, PROPERTY_EXTRACT, FT_TYPE, FT_HUMAN
+@@ -90,7 +91,7 @@
+         explanation = self._add_explanation()
+         element: Paragraph = inputs[self.input_key]
+         paragraph: str = element.clean_text
+-        token_checker: TokenChecker = inputs['token_checker']
++        token_checker: TokenChecker = inputs.get('token_checker')
+ 
+         llm_kwargs={
+             'explanation':explanation,
+@@ -159,7 +160,7 @@
+                 llm_output=output,
+             )
+ 
+-        output = self._parse_output_json(output)
++        output = normalize_measurements(self._parse_output_json(output))
+         return {"output": output}
+ 
+     def _add_explanation(self):
+diff --git a/llm_miner/table/property/prompt.py b/llm_miner/table/property/prompt.py
+--- a/llm_miner/table/property/prompt.py
++++ b/llm_miner/table/property/prompt.py
+@@ -1,4 +1,7 @@
+-PROPERTY_CATEGORIZE = """From the provided markdown table, generate a Python list of item names with data present. You must exclude absent items and return an empty list if any key items are missing. Names of items must be one of following:
++from llm_miner.format.extraction_rules import SAMPLE_RULES
++from llm_miner.format.battery import PROPERTIES
++
++PROPERTY_CATEGORIZE = SAMPLE_RULES + """From the provided markdown table, generate a Python list of item names with data present. Exclude absent measurements, but retain a reported measurement when optional test conditions are missing. Names of items must be one of following:
+ 
+ {{explanation}}
+ 
+@@ -95,7 +98,7 @@
+ List:"""
+ 
+ 
+-PROPERTY_EXTRACT = """From the given Markdown table, extract information related to {{prop}} for each materials. Extracted information should be in structured json format as in the Format below but when presenting the output, strictly refrain from using ellipsis. When lanthanides (Ln) or halogens (X) or metal (M) come out, indicate by substituting.
++PROPERTY_EXTRACT = SAMPLE_RULES + """From the given Markdown table, extract information related to {{prop}} for each material. Nearby context may identify the sample and explicitly stated test conditions; numeric measurements must come from this table. Do not invent a material identity when the context does not identify it. Extracted information should be in structured json format as in the Format below but when presenting the output, strictly refrain from using ellipsis. When lanthanides (Ln) or halogens (X) or metal (M) come out, indicate by substituting.
+ {{format}}
+ 
+ Begin!
+@@ -114,3 +117,5 @@
+ 
+ 
+ FT_HUMAN = "{paragraph}"
++
++FT_TYPE += "\nAdditional supported properties: " + ", ".join(PROPERTIES) + SAMPLE_RULES
+diff --git a/llm_miner/table/routing.py b/llm_miner/table/routing.py
+new file mode 100644
+--- /dev/null
++++ b/llm_miner/table/routing.py
+@@ -0,0 +1,21 @@
++"""Conservative overrides for tables outside the original crystallography domain."""
++
++import re
++from bs4 import BeautifulSoup
++
++
++def route_table(text, context=None):
++    plain = BeautifulSoup(text, "html.parser").get_text(" ")
++    plain = re.sub(r"\s+", " ", plain).lower()
++    # Dissolved ions in electrolyte are a stability measurement, not solid composition.
++    if (re.search(r"\b(?:dissolv\w*|leach\w*|dissolution)\b", plain)
++            and re.search(r"\b(?:co|cobalt)\b", plain)
++            and re.search(r"\b(?:ppm|electrolyte)\b", plain)):
++        return "Property"
++    parameters = ("rf power", "coating time", "chamber temperature",
++                  "working pressure", "dezn flow rate", "bubble pressure")
++    if (sum(item in plain for item in parameters) >= 2
++            and ("process parameter" in plain or "coating conditions" in plain
++                 or "coating conditions" in str(context or "").lower())):
++        return "Synthesis condition"
++    return None
+diff --git a/llm_miner/text/base.py b/llm_miner/text/base.py
+--- a/llm_miner/text/base.py
++++ b/llm_miner/text/base.py
+@@ -18,6 +18,7 @@
+ from llm_miner.error import LangchainError
+ from llm_miner.pricing import TokenChecker, update_token_checker
+ from llm_miner.structured_output import parse_structured_output
++from llm_miner.validation import normalize_measurements
+ 
+ 
+ class TextMiningAgent(Chain):
+@@ -84,8 +85,11 @@
+         property_type = self._parse_output(llm_output)
+         self._write_log(str(property_type), _run_manager)
+         element.set_include_properties(property_type)
+-
+-        st_data_string = ""
++        if not property_type:
++            element.set_data([])
++            return {"output": []}
++
++        st_data_string = Formatter.structured_data["meta"] + "\n"
+         info_string = ""
+         example_string = ""
+         prop_string = ""
+@@ -93,8 +97,8 @@
+         for prop in property_type: # 动态生成提取规则
+             try:
+                 st_data = Formatter.structured_data[prop]
+-                info = Formatter.information[prop]
+-                example = Formatter.example_text[prop]
++                info = Formatter.information.data.get(prop, "")
++                example = Formatter.example_text.data.get(prop, "")
+             except KeyError:
+                 self._write_log(f"There are no format for {prop}", _run_manager)
+                 continue
+@@ -132,7 +136,7 @@
+                 llm_output=llm_output
+             )
+ 
+-        st_output = self._parse_output(llm_output)
++        st_output = normalize_measurements(self._parse_output(llm_output))
+         self._write_log(f"{st_output}", _run_manager)
+ 
+         element.set_data([st_output])
+diff --git a/llm_miner/text/prompt.py b/llm_miner/text/prompt.py
+--- a/llm_miner/text/prompt.py
++++ b/llm_miner/text/prompt.py
+@@ -1,4 +1,7 @@
+-PROMPT_TYPE = """First, determine whether properties exist or not. Except for topology, crystal system, and space group, properties must have a float value. If a property does not have float value, do not extract it. If there is no property in the paragraph, please return an empty list.
++from llm_miner.format.extraction_rules import SAMPLE_RULES
++from llm_miner.format.battery import PROPERTIES
++
++PROMPT_TYPE = SAMPLE_RULES + """First, determine whether properties or test conditions exist. Except for topology, crystal system, space group and test_conditions, properties must have a reported numeric value (including ranges and bounds). If there is no property or test setup in the paragraph, please return an empty list.
+ If properties exist, you must find all the properties in paragraphs. Names of properties must be one of following:
+ {explanation}
+ 
+@@ -8,7 +11,7 @@
+ - If a property you find lacks a value, please exclude it.
+ - Do not be confused between gas adsorption and selectivity. Gas adsorption is a property that has a unit and selectivity is unitless. Even though there is a word "selectivity", it is not always selectivity. If there is a value with unit, it is gas adsorption.
+ - In crystal system, there are triclinic, monoclinic, orthorhombic, tetragonal, trigonal, hexagonal, and cubic. If one of them exists in the paragraph, it means there is "crystal system" information.
+-- If "TGA" or "TG" exists in the paragraph, it includes "decomposition_temperature".
++- TGA/TG alone does not establish a decomposition onset. Use thermal_event for reported weight-loss/oxygen-release temperatures and test_conditions for the measurement setup.
+ - When property does not exist in the list, write "etc".
+ 
+ If you are uncertain, please reply with "I do not know".
+@@ -79,14 +82,14 @@
+ List:"""
+ 
+ 
+-PROMPT_EXT = """Extract the information about {prop} mentioned in the paragraph. Follow the structured data in JSON format:
++PROMPT_EXT = SAMPLE_RULES + """Extract the information about {prop} mentioned in the paragraph. Follow the structured data in JSON format:
+ {structured_data}
+ 
+ You must follow below rules:
+ - You must write all the information about {prop} in the paragraph.
+ - Do not forge information that is not in the paragraph.
+ - Do not write the information in the examples.
+-- When property is "etc", do not extract {prop}.
++- When property is "etc", extract the reported numeric property using its actual property name, value, unit and condition.
+ - Make a list that shows properties of each material. The list consists of several dictionaries of all materials. Each dictionary must include "meta":{{"name":"", "symbol":"", "chemical formula":""}}. ex) [{{"meta":{{"name":"", "symbol":"", "chemical formula":""}}, {structured_data}]
+ - When material is expressed as a number, you must fill in "symbol" of "meta". ex) Paragraph: The corresponding BET surface area is 100 m2/g for 1. JSON: [{{"meta":{{"name":"", "symbol":"1", "chemical formula":""}}, "surface area": {{"type": "BET", "probe": "", "value": "100", "unit": "m2/g"}}}}]
+ - "condition" means not only pressure, temperature, but specific details of property like crystal form.
+@@ -113,3 +116,5 @@
+ )
+ 
+ FT_HUMAN = "{paragraph}"
++
++FT_TYPE += "\nAdditional supported properties: " + ", ".join(PROPERTIES) + SAMPLE_RULES
+diff --git a/llm_miner/validation.py b/llm_miner/validation.py
+new file mode 100644
+--- /dev/null
++++ b/llm_miner/validation.py
+@@ -0,0 +1,49 @@
++"""Small deterministic checks applied before model measurements are stored."""
++
++from copy import deepcopy
++
++
++def normalize_measurements(data):
++    """Keep nonnumeric records, but do not count blank quantities as measurements."""
++    if isinstance(data, list):
++        return [normalize_measurements(item) for item in data]
++    if not isinstance(data, dict):
++        return data
++    record = deepcopy(data)
++    for key, values in list(record.items()):
++        if key in {"meta", "processes"} or not isinstance(values, list):
++            continue
++        kept = []
++        for value in values:
++            if (not isinstance(value, dict) or "value" not in value
++                    or (value["value"] is not None and str(value["value"]).strip())):
++                kept.append(value)
++            elif value.get("condition"):
++                record.setdefault("notes", []).append({
++                    "property": key, "observation": value["condition"],
++                    "reason": "No numeric value was reported"})
++        if kept:
++            record[key] = kept
++        else:
++            record.pop(key, None)
++    # Explicit particle-size wording is not a measurement of crystallite size.
++    crystal_sizes = record.get("crystal size", [])
++    if isinstance(crystal_sizes, list):
++        kept = []
++        for value in crystal_sizes:
++            if not isinstance(value, dict):
++                kept.append(value)
++                continue
++            condition = str(value.get("condition", "")).lower()
++            if "coating diameter" in condition or "coating particle" in condition:
++                record.setdefault("coating particle size", []).append(value)
++            elif "particle size" in condition or "particle diameter" in condition:
++                record.setdefault("particle size", []).append(value)
++            else:
++                kept.append(value)
++        if "crystal size" in record:
++            if kept:
++                record["crystal size"] = kept
++            else:
++                record.pop("crystal size")
++    return record
+diff --git a/requirements.txt b/requirements.txt
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,7 @@
+-langchain
+-langchain_community
+-openai
++langchain==0.0.354
++langchain_community==0.0.20
++pydantic>=1.10,<2
++openai>=1,<2
+ openpyxl
+ bs4
+ lxml
+diff --git a/tests/fixtures/zno_source_excerpts.json b/tests/fixtures/zno_source_excerpts.json
+new file mode 100644
+--- /dev/null
++++ b/tests/fixtures/zno_source_excerpts.json
+@@ -0,0 +1,8 @@
++{
++  "17": "For an investigation of the electrochemical characteristics, half-cells were fabricated in a dry room with a maximum moisture content of less than 0.5%. The cathode consisted of 87 wt.% active materials, 8 wt.% acetylene black (AB) conductor, and 5 wt.% polyvinylidene fluoride (PVDF) binder. The mixed slurry was uniformly spread on a thin aluminum foil with a thickness of 15 -m, followed by drying at $8 0 \\mathrm { { } ^ { \\circ } C }$ for 1 h. The electrodes were cut into $2 \\times 2$ cm pieces and then roll-pressed to increase the number of inter-particle contacts. The pressed electrodes were dried in a vacuum oven at 80◦C for 12 h. Half-cells were then assembled with the bare or $Z _ { \\mathrm { { I n O } } } .$ -coated $\\mathrm { L i C o O } _ { 2 }$ as the working electrode, lithium metal foil as the counter electrode, 1 M $_ { \\mathrm { L i P F } _ { 6 } - \\mathrm { E C } : \\mathrm { D M C } : \\mathrm { E M C } }$ (1:1:1 by volume) as the electrolyte, and a polypropylene-based film as the separator. All the assembled cells were charged and discharged galvanostatically over the voltage range, $3 . 0 { - } 4 . 5 \\mathsf { V } _ { \\mathrm { L i / L i + } }$ at a 1 C rate by means of a Maccor 4000 battery cycler. Electrochemical impedance spectroscopy (EIS) measurements were performed on cells in the fully discharged state using a Schlumberger model SI 1260 impedance/gain-phase analyzer connected to a Schlumberger model SI 1286 electrochemical interface. The amplitude of the a.c. signal was 5 mV over the frequency range of 1 MHz and 10 mHz.",
++  "19": "<table><tr><td>Process parameter</td><td>Condition</td></tr><tr><td>RF power</td><td>200 W</td></tr><tr><td>Chamber temperature</td><td>25 °C</td></tr><tr><td>Base pressure</td><td><eq>2 \\times 10^{-5}</eq> Torr</td></tr><tr><td>Working pressure</td><td><eq>8.0 \\times 10^{-2}</eq> Torr</td></tr><tr><td><eq>O_{2}</eq> flow rate</td><td>3 sccm</td></tr><tr><td>DEZn flow rate</td><td>1 sccm</td></tr><tr><td>Ar flow rate</td><td>10 sccm</td></tr><tr><td>Bubble pressure</td><td>100 Torr</td></tr><tr><td>Chiller temperature</td><td>15°C</td></tr><tr><td>Coating time</td><td>15 min, 30 min, 1 h, 1.5 h</td></tr></table>",
++  "20": "To investigate the effect of the coating on the thermal stability of the charged cathodes, the thermal decomposition behaviour of both bare and ZnO-coated $\\mathrm { L i C o O } _ { 2 }$ was examined by means of differential scanning calorimetry (DSC) and thermogravimetric (TG) analysis. For the DSC (DuPont instruments, DSC 2910) experiments, the fresh cells were charged to 4.5 V at a 0.1 C rate and held at that voltage for 24 h. After disassembling the cells in a dry room, approximately 5 mg ofthe cathode material containing the electrolyte was hermetically sealed in an aluminum DSC sample pan. All experiments were performed at a heating rate of $5 ^ { \\circ } \\mathsf { C } \\operatorname* { m i n } ^ { - 1 }$ . Similarly, TGA (TA instruments, SDT 2960) was also carried out at a heating rate of $5 ^ { \\circ } \\mathsf { C } \\operatorname* { m i n } ^ { - 1 }$ in an argon atmosphere.",
++  "31": "Fig. 5(a) shows the changes in the discharge capacities during repeated charge-discharge cycling for the bare and ZnO-coated LiCoO with different coating amounts. The ZnO coating substantially improves the cyclic performance of $\\mathrm { L i C o O } _ { 2 }$ . The results of the cycling test in the range of $3 . 0 { - } 4 . 5 \\ : \\mathrm { V }$ reveal that both bare and ZnO-coated $\\mathrm { L i C o O } _ { 2 }$ materials exhibit little difference in their discharge capacity during the first few cycles. In subsequent cycles, however, the bare $\\mathrm { L i C o O } _ { 2 }$ abruptly degrades, whereas the ZnO-coated $\\mathrm { L i C o O } _ { 2 }$ fades relatively slowly. In addition, different coating amounts cause different degrees of capacity retention upon cycling. Fig. 5(b) shows the capacity retention of the test cells after 30 cycles as a function of the concentration of deposited $Z \\mathrm { n } ^ { 2 + }$ , where capacity retention is defined as the percentage of the discharge capacity that remains after the 30th cycle with respect to the discharge capacity at the first cycle. Compared with bare LiCoO that displays a capacity retention of 37% after 30 cycles, the 0.21 wt.% ZnO-coated $\\mathrm { L i C o O } _ { 2 }$ retained approximately 65% of its initial capacity. Further increases in the coating amount result in a decrease in cyclic stability, which might be due in part to the electrochemical inactivity resulting from the excess coating materials. It is believed that the presence of an excess amount of ZnO on the surface of the matrix particles may lead to a decrease in the particle–particle electronic conductivity and the formation of agglomerated ZnO particles, as observed on the surface of0.49 wt.% $\\mathsf { Z n O - L i C o O } _ { 2 }$ . This may inhibit lithium-ion transport through the interface between the surface layer and cathode particles.\n\n![image](https://cdn-mineru.openxlab.org.cn/result/2026-10-09/b8c7a45c-fcd7-411c-a620-119688c3749c/71b7639344729d2c376a4e91f8bde5c9de52796de32f63d35a78e7dfa1f96c88.jpg)",
++  "33": "Cobalt dissolution from a $\\mathrm { L i C o O } _ { 2 }$ cathode during high-voltage cycling, which causes degradation ofthe $\\mathrm { L i C o O _ { 2 } }$ structure, is widely held to be one of the major reasons for capacity fading at high cutoff voltages [17–20]. For a direct examination of the effect of the surface coating on Co dissolution from $\\mathrm { L i C o O } _ { 2 }$ cathode, approximately 70 mg ofthe bare and 0.21 wt.% ZnO-coated $\\mathrm { i } { \\mathsf { C o O } } _ { 2 }$ powders, which were used in the cycling test (30 cycles at 1 C rate), were prepared and then immersed in a 1 M LiPF -EC:DMC:EMC(1:1:1 by volume) electrolyte for 10 days at 80◦C. As shown in Table 2, the amount of Co dissolved from the 0.21 wt.% ZnO-coated LiCoO is less than 0.1 ppm, which is much lower than that from the bare $\\mathrm { L i C o O } _ { 2 } ,$ viz., 0.79 ppm. This indicates that the uniform dispersion of ZnO nanoparticles on the $\\mathrm { L i C o O } _ { 2 }$ surface can effectively reduce the contact area between the $\\mathrm { L i C o O } _ { 2 }$ and electrolyte which, in turn, can reduce the dissolution of Co ions from $\\mathrm { L i C o O } _ { 2 }$ into the electrolyte.",
++  "36": "<table><tr><td>Sample</td><td>Co content dissolved in electrolyte (ppm)</td></tr><tr><td>Bare LiCoO2</td><td>0.79</td></tr><tr><td>0.21 wt.% ZnO-coated LiCoO2</td><td>&lt;0.1</td></tr></table>"
++}
+diff --git a/tests/test_battery_extraction.py b/tests/test_battery_extraction.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_battery_extraction.py
+@@ -0,0 +1,247 @@
++import json
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from langchain.llms.fake import FakeListLLM
++from llm_miner import JournalReader, LLMMiner
++from llm_miner.categorize.base import CategorizeAgent
++from llm_miner.format import Formatter
++from llm_miner.format.battery import PROPERTIES
++from llm_miner.meta_collector import Material, MinedData, Results, MetaCollector
++from llm_miner.meta_collector.utils import format_chemical_formula
++from llm_miner.parser.markdown import MarkdownParser, MarkdownDocument
++from llm_miner.schema import Elements, Paragraph
++from llm_miner.synthesis.base import SynthesisMiningAgent
++from llm_miner.table.base import TableMiningAgent
++from llm_miner.table.property.base import PropertyTableAgent
++from llm_miner.table.routing import route_table
++from llm_miner.text.base import TextMiningAgent
++from llm_miner.validation import normalize_measurements
++
++
++FIXTURE = json.loads((Path(__file__).parent / 'fixtures/zno_source_excerpts.json').read_text())
++
++
++class OfflineLLM(FakeListLLM):
++    model_name: str = 'gpt-4'
++
++
++def llm(*responses):
++    return OfflineLLM(responses=[json.dumps(r) if not isinstance(r, str) else r for r in responses])
++
++
++def parse(text):
++    return MarkdownParser.parsing(MarkdownDocument(text, {}, MarkdownParser._engine().parse(text)))
++
++
++def meta(name, loading=None, role=None):
++    result = {'name': name, 'chemical formula': 'ZnO/LiCoO2' if 'coated' in name else 'LiCoO2'}
++    if loading is not None:
++        result['coating amount'] = {'value': loading, 'unit': 'wt.%'}
++    if role:
++        result['role'] = role
++    return result
++
++
++class ParserTests(unittest.TestCase):
++    def test_paper_discussion_before_image_is_text(self):
++        elements = parse(FIXTURE['31'])
++        text = [e for e in elements if e.type == 'text']
++        self.assertEqual(len(text), 1)
++        self.assertIn('37%', text[0].clean_text)
++        self.assertIn('65%', text[0].clean_text)
++        self.assertEqual(len([e for e in elements if e.type == 'figure']), 1)
++
++    def test_discussion_after_image_is_not_caption(self):
++        elements = parse('![image](example.png)\n\nFig. 5(a) shows a retention of 65% after cycling.')
++        self.assertEqual([e.type for e in elements], ['figure', 'text'])
++
++    def test_genuine_caption_still_attaches(self):
++        for source in ('![image](example.png)\n\nFig. 5. Cycling performance of coated LiCoO2.',
++                       'Fig. 5. Cycling performance of coated LiCoO2.\n\n![image](example.png)'):
++            with self.subTest(source=source):
++                elements = parse(source)
++                self.assertEqual(len(elements), 1)
++                self.assertEqual(elements[0].type, 'figure')
++                self.assertIn('Cycling performance', elements[0].clean_text)
++
++    def test_mixed_inline_prose_and_image_keeps_both(self):
++        elements = parse('The sample retained 65%. ![plot](example.png)')
++        self.assertEqual([e.type for e in elements], ['text', 'figure'])
++        self.assertIn('65%', elements[0].clean_text)
++
++    def test_unlabelled_process_title_is_available_to_table(self):
++        elements = parse('Coating conditions of ZnO on LiCoO2 powder by PE-CVD.\n\n' + FIXTURE['19'])
++        table = next(e for e in elements if e.type == 'table')
++        self.assertIn('PE-CVD', table.intermediate_step['context_before'])
++
++
++class FormulaAndIdentityTests(unittest.TestCase):
++    def test_formula_groups_and_repeated_elements(self):
++        self.assertEqual(format_chemical_formula('Ca(OH)2'), ('Ca1 H2 O2', True))
++        self.assertEqual(format_chemical_formula('LiCoO2'), ('Co1 Li1 O2', True))
++        self.assertEqual(format_chemical_formula('CH3COOH'), ('C2 H4 O2', True))
++
++    def test_composites_and_invalid_formula_are_preserved(self):
++        for formula in ['ZnO/LiCoO2', 'ZnO-LiCoO2', 'LiCoO2@ZnO', 'CuSO4·5H2O', 'Li0.5CoO2', 'LiCoO2 garbage']:
++            with self.subTest(formula=formula):
++                self.assertEqual(format_chemical_formula(formula), (formula, False))
++
++    def test_loadings_and_roles_do_not_merge(self):
++        samples = [MinedData.from_data({'meta': meta('ZnO-coated LiCoO2', x), 'capacity retention': [{'value': str(i)}]})
++                   for i,x in enumerate(['0.08','0.10','0.21','0.49'])]
++        samples.append(MinedData.from_data({'meta': meta('ZnO-coated LiCoO2')}))
++        result = Results.empty()
++        for index, sample in enumerate(samples):
++            result.append(sample,index)
++        self.assertEqual(len(result), 5)
++        a=Material.from_data(meta('ZnO-coated LiCoO2','0.21','coated_material'))
++        b=Material.from_data(meta('ZnO-coated LiCoO2','0.21','electrode'))
++        self.assertFalse(a.is_equal(b))
++
++    def test_same_loading_merges_and_roundtrips(self):
++        result=Results.empty()
++        for index,value in enumerate(['0.210','0.21']):
++            result.append(MinedData.from_data({'meta': meta('ZnO-coated LiCoO2',value)}),index)
++        self.assertEqual(len(result),1)
++        restored=Results.from_dict(result.to_dict())
++        self.assertEqual(restored[0].material.coating_amount,{'value':'0.21','unit':'wt.%'})
++        self.assertEqual(restored.to_dict(),result.to_dict())
++
++    def test_anonymous_data_is_retained_outside_materials(self):
++        result=Results.empty()
++        result.append(MinedData.from_data({'meta': {}, 'processes': [{'time':'15 min'}]}),0)
++        self.assertEqual(len(result),0)
++        self.assertEqual(result.unassigned_data[0].data['processes'][0]['time'],'15 min')
++        self.assertEqual(Results.from_dict(result.to_dict()).to_dict(), result.to_dict())
++
++    def test_old_results_remain_readable(self):
++        result=Results.empty().to_dict()
++        result.pop('unassigned_data')
++        self.assertEqual(Results.from_dict(result).unassigned_data,[])
++
++    def test_loading_qualifiers_and_ranges_are_not_exact_samples(self):
++        exact=Material.from_data(meta('ZnO-coated LiCoO2','0.21'))
++        for name in ['<0.21 wt.% ZnO-coated LiCoO2','0.08–0.49 wt.% ZnO-coated LiCoO2']:
++            self.assertFalse(exact.is_equal(Material.from_data(meta(name))))
++
++    def test_loading_in_name_matches_loading_in_metadata(self):
++        a=MinedData.from_data({'meta':meta('0.21 wt.% ZnO-coated LiCoO2','0.21'), 'capacity retention':[{'value':'65'}]})
++        b=MinedData.from_data({'meta':meta('ZnO-coated LiCoO2','0.21'), 'capacity retention':[{'value':'64','cycles':'20'}]})
++        result=Results.empty()
++        result.append(a,0)
++        result.append(b,1)
++        self.assertEqual(len(result),1)
++        self.assertEqual(len(result[0]['capacity retention']),2)
++        self.assertNotIn('capacity retention_1',result[0].data)
++        self.assertEqual(len(result[0].origin_data[0]['capacity retention']),1)
++
++
++class RoutingAndExtractionTests(unittest.TestCase):
++    def test_domain_routing_and_no_bulk_composition_override(self):
++        self.assertEqual(route_table(FIXTURE['19']), 'Synthesis condition')
++        self.assertEqual(route_table(FIXTURE['36']), 'Property')
++        self.assertIsNone(route_table('| Sample | Co (%) | O (%) |\n| A | 30 | 20 |'))
++        self.assertIsNone(route_table('| Sample | Co (%) |\n| A | 30 |',context='Dissolved cobalt in electrolyte was measured in ppm.'))
++
++    def test_every_battery_property_has_complete_resources(self):
++        agent=TextMiningAgent.from_llm(llm([]),llm([]))
++        table_agent=PropertyTableAgent.from_llm(llm([]),llm([]))
++        for prop in PROPERTIES:
++            with self.subTest(prop=prop):
++                self.assertIn(prop,agent._add_explanation())
++                for resource in [Formatter.structured_data,Formatter.information,Formatter.example_text]:
++                    self.assertTrue(resource[prop])
++                self.assertIn('Output:',table_agent._make_examples([prop]))
++
++    def test_cobalt_table_reaches_property_extractor(self):
++        records=[{'meta': meta('bare LiCoO2'), 'cobalt dissolution':[{'value':'0.79','unit':'ppm'}]},
++                 {'meta':meta('ZnO-coated LiCoO2','0.21'), 'cobalt dissolution':[{'value':'0.1','comparison':'<','unit':'ppm'}]}]
++        agent=TableMiningAgent.from_llm(
++            convert_llm=llm('| Sample | Co content dissolved in electrolyte (ppm) |\n|---|---|\n| bare LiCoO2 | 0.79 |\n| 0.21 wt.% ZnO-coated LiCoO2 | <0.1 |\n<END>'),
++            emergency_llm=llm('unused'),categorize_llm=llm('unused'),
++            crystal_table_type_llm=llm('unused'),crystal_table_extract_llm=llm('unused'),
++            property_table_type_llm=llm(['cobalt_dissolution']),property_table_extract_llm=llm(records))
++        element=Paragraph(idx=36,type='table',content=FIXTURE['36'],clean_text='')
++        output=agent.run(element=element)
++        self.assertEqual(output,records)
++        self.assertEqual(element.classification,['Property'])
++        self.assertEqual(element.data[1]['cobalt dissolution'][0]['comparison'],'<')
++
++    def test_process_table_uses_synthesis_with_context(self):
++        records=[{'meta':meta('ZnO-coated LiCoO2'), 'processes':[
++            {'synthesis method':'chemical vapor deposition','time':'15 min, 30 min, 1 h, 1.5 h','carrier gas name':'Ar','carrier gas flow rate':'10 sccm'}]}]
++        table_text='| Process parameter | Condition |\n|---|---|\n| RF power | 200 W |\n| Coating time | 15 min, 30 min, 1 h, 1.5 h |\n| Ar flow rate | 10 sccm |'
++        agent=TableMiningAgent.from_llm(
++            convert_llm=llm(table_text+'\n<END>'),emergency_llm=llm('unused'),categorize_llm=llm('unused'),
++            crystal_table_type_llm=llm('unused'),crystal_table_extract_llm=llm('unused'),
++            property_table_type_llm=llm(['chemical_vapor_deposition']),property_table_extract_llm=llm(records))
++        element=Paragraph(idx=19,type='table',content=FIXTURE['19'],clean_text='',intermediate_step={'context_before':'Coating conditions of ZnO on LiCoO2 by PE-CVD.'})
++        with patch('llm_miner.synthesis.base.num_tokens_from_string',return_value=10):
++            output=agent.run(element=element)
++        self.assertEqual(output,records)
++        self.assertEqual(element.classification,['Synthesis condition'])
++        self.assertIn('PE-CVD',element.clean_text)
++        self.assertNotIn('simulation parameters',element.data[0])
++        self.assertEqual(element.data[0]['processes'][0]['carrier gas flow rate'],'10 sccm')
++
++    def test_etc_is_extractable_and_bounds_are_preserved(self):
++        record=[{'meta':meta('bare LiCoO2'), 'etc':[{'property name':'dissolved cobalt','value':'0.1','comparison':'<','unit':'ppm'}]}]
++        agent=TextMiningAgent.from_llm(llm(['etc']),llm(record))
++        element=Paragraph(idx=1,type='text',content='Co dissolved <0.1 ppm',clean_text='Co dissolved <0.1 ppm')
++        self.assertEqual(agent.run(element=element),record)
++        prompt=agent.extract_chain.prompt.format(prop='etc',structured_data='',information='',example='',paragraph='test')
++        self.assertNotIn('do not extract etc',prompt)
++        self.assertIn('actual property name',prompt)
++
++    def test_test_conditions_do_not_need_a_value_field(self):
++        record=[{'meta':{'name':'LiCoO2 samples','role':'material_group'}, 'test conditions':[{'test_type':'TGA','heating_rate':'5 °C/min','atmosphere':'argon'}]}]
++        agent=TextMiningAgent.from_llm(llm(['test_conditions']),llm(record))
++        element=Paragraph(idx=20,type='text',content=FIXTURE['20'],clean_text=FIXTURE['20'])
++        self.assertEqual(agent.run(element=element),record)
++
++    def test_empty_measurements_removed_without_losing_zero(self):
++        record={'meta':{'name':'A'},'surface area':[{'value':'','unit':'','condition':'increases with loading'}],
++                'cobalt dissolution':[{'value':0,'unit':'ppm'}],'crystal size':[{'value':'8.2','condition':'average particle size'}]}
++        normalized=normalize_measurements(record)
++        self.assertNotIn('surface area',normalized)
++        self.assertIn('notes',normalized)
++        self.assertIn('particle size',normalized)
++        self.assertEqual(normalized['cobalt dissolution'][0]['value'],0)
++        self.assertIn('surface area',record)  # input evidence is not mutated
++
++    def test_no_properties_does_not_call_extraction(self):
++        agent=TextMiningAgent.from_llm(llm([]),llm('not valid JSON'))
++        element=Paragraph(idx=1,type='text',content='no data',clean_text='no data')
++        self.assertEqual(agent.run(element=element),[])
++
++
++class PipelineTests(unittest.TestCase):
++    def test_discussion_flows_from_reader_to_sample_results(self):
++        retention=[{'meta':meta('bare LiCoO2',role='bare_material'), 'capacity retention':[{'value':'37','unit':'%','cycles':'30'}]},
++                   {'meta':meta('0.21 wt.% ZnO-coated LiCoO2','0.21','coated_material'), 'capacity retention':[{'value':'65','unit':'%','cycles':'30','is_approximate':True}]}]
++        with tempfile.TemporaryDirectory() as folder:
++            path=Path(folder)/'paper.md'
++            path.write_text('# Paper\n\n'+FIXTURE['31'])
++            jr=JournalReader.from_file(str(path))
++            agent=LLMMiner(
++                categorize_agent=CategorizeAgent.from_llm(llm(['else'],['property'])),
++                synthesis_agent=SynthesisMiningAgent.from_llm(llm([]),llm([])),
++                property_agent=TextMiningAgent.from_llm(llm(['capacity_retention']),llm(retention)),
++                table_agent=TableMiningAgent.from_llm(*[llm('unused') for _ in range(7)]))
++            with patch('llm_miner.utils.num_tokens_from_string',return_value=10):
++                agent.run(jr)
++            self.assertEqual(len(jr.result),2)
++            self.assertEqual(jr.result[0]['capacity retention'][0]['value'],'37')
++            self.assertEqual(jr.result[1].material.coating_amount,{'value':'0.21','unit':'wt.%'})
++            self.assertEqual(jr.result[1].chemical_formula,'ZnO/LiCoO2')
++            self.assertTrue(jr.result[1]['capacity retention'][0]['is_approximate'])
++            output=Path(folder)/'full.json'
++            jr.to_json(str(output))
++            self.assertEqual(JournalReader.from_json(str(output)).result.to_dict(),jr.result.to_dict())
++
++
++if __name__ == '__main__':
++    unittest.main()

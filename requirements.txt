@@ -1,6 +1,7 @@
-langchain
-langchain_community
-openai
+langchain==0.0.354
+langchain_community==0.0.20
+pydantic>=1.10,<2
+openai>=1,<2
 openpyxl
 bs4
 lxml

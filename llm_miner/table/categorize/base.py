@@ -20,7 +20,7 @@ from llm_miner.pricing import TokenChecker, update_token_checker
 
 class CategorizeAgent(Chain):
     categorize_chain: LLMChain
-    labels: List[str] = ["Crystal", "Bond & Angle", "Coordinate", "Property", "Elemental Composition"]
+    labels: List[str] = ["Crystal", "Bond & Angle", "Coordinate", "Property", "Elemental Composition", "Synthesis condition"]
     input_key: str = "element"
     output_key: str = "output"
 
@@ -55,7 +55,7 @@ class CategorizeAgent(Chain):
 
         element: Paragraph = inputs[self.input_key]
         para: str = element.clean_text
-        token_checker: TokenChecker = inputs['token_checker']
+        token_checker: TokenChecker = inputs.get('token_checker')
 
         llm_kwargs = {
             'paragraph': para,

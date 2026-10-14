@@ -1,6 +1,8 @@
-PROMPT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property"].
+PROMPT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property", "Synthesis condition"].
 
 You must follow rules below:
+- Return "Synthesis condition" for experimental preparation/coating process parameters, such as RF power, gas flow rates, deposition time and reactor pressure. These are not computer simulation parameters.
+- Dissolved/leached Co concentration in electrolyte is a stability property: return "Property", not "Elemental Composition". The latter refers to composition of a solid material.
 - Typical "Crystal" markdown table includes lattice parameter, spacegroup and etc. "Crystal" table is mostly comprised of crystal information. In that case, return "Crystal".
 - If the markdown table is mostly comprised of bond or angle information of specific materials, return "Bond & Angle".
 - If the markdown table is mostly comprised of coorination information of specific materials, return "Coordinate".
@@ -184,7 +186,7 @@ Input:
 Output:"""
 
 
-FT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property"]."""
+FT_CATEGORIZE = """Determine the category of the given markdown table from the following options: ["Crystal", "Bond & Angle", "Coordinate", "Elemental Composition", "Property", "Synthesis condition"]. Preparation/coating process parameters are Synthesis condition, not simulation parameters. Dissolved/leached cobalt concentration in electrolyte is Property, not Elemental Composition."""
 
 
 FT_HUMAN = "{paragraph}"

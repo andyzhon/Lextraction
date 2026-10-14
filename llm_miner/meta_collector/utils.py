@@ -2,11 +2,9 @@ import re
 from typing import List, Union
 
 from ase.data import chemical_symbols
+from ase.formula import Formula
 
-if "X" in chemical_symbols:
-    chemical_symbols.remove("X")
-chemical_symbols += ["D", "T"]
-chemical_symbols = list(set(chemical_symbols))
+chemical_symbols = set(chemical_symbols) - {"X"} | {"D", "T"}
 
 
 def format_chemical_name(input_string: str) -> str:
@@ -80,31 +78,19 @@ def format_chemical_formula(_s):
     for sub, normal in subscript_mapping.items():
         s = s.replace(sub, normal)
 
-    s = s.replace("(", "")
-    s = s.replace(")", "")
-    s = re.sub(r"\s*\u22C5\d+\w+", "", s)
-
-    # "[" 또는 "]" 있으면 일반적인 형태가 아님
-    if "[" in s or "]" in s:
+    s = re.sub(r"\s+", "", s)
+    # Preserve composite, coating, hydrate and non-stoichiometric notation.
+    # A bag of regex matches cannot establish a single chemical formula.
+    if not re.fullmatch(r"(?:[A-Z][a-z]?\d*|\(|\)\d*)+", s):
         return _s, False
-
-    elements = re.findall(r"([A-Z][a-z]?)(\d*\.?\d*)", s)
-    # atom type이 ase database 안에 없으면 일반적인 형태가 아님
-    for elem, _ in elements:
-        if elem not in chemical_symbols:
-            return _s, False
-
-    new_string = " ".join(
-        [f"{elem}{count if count else '1'}" for elem, count in elements]
-    )
-
-    # 비어있어도 일반적인 형태라고 할 순 없음
-    if not new_string:
+    try:
+        counts = Formula(s).count()
+    except (ValueError, AssertionError, IndexError):
         return _s, False
-
-    # 알파벳 순서로 sorting
-    new_string = " ".join(sorted(new_string.split(" ")))
-    return new_string, True
+    if not counts or any(elem not in chemical_symbols or count <= 0
+                         for elem, count in counts.items()):
+        return _s, False
+    return " ".join(f"{elem}{count}" for elem, count in sorted(counts.items())), True
 
 
 def flatten_list_of_dicts(data: List[Union[dict, list]]) -> List[dict]:

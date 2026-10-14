@@ -13,6 +13,7 @@ from langchain.prompts.chat import (
 )
 
 from llm_miner.schema import Paragraph
+from llm_miner.validation import normalize_measurements
 from llm_miner.error import StructuredFormatError, LangchainError
 from llm_miner.format import Formatter
 from llm_miner.table.property.prompt import PROPERTY_CATEGORIZE, PROPERTY_EXTRACT, FT_TYPE, FT_HUMAN
@@ -90,7 +91,7 @@ class PropertyTableAgent(Chain):
         explanation = self._add_explanation()
         element: Paragraph = inputs[self.input_key]
         paragraph: str = element.clean_text
-        token_checker: TokenChecker = inputs['token_checker']
+        token_checker: TokenChecker = inputs.get('token_checker')
 
         llm_kwargs={
             'explanation':explanation,
@@ -159,7 +160,7 @@ class PropertyTableAgent(Chain):
                 llm_output=output,
             )
 
-        output = self._parse_output_json(output)
+        output = normalize_measurements(self._parse_output_json(output))
         return {"output": output}
 
     def _add_explanation(self):

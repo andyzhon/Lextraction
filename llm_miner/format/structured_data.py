@@ -3,6 +3,11 @@ meta = """
     "name": "",
     "symbol": "",  # ex) 1a
     "chemical formula": "",
+    "sample id": "",  # only when explicitly supplied by the article
+    "role": "",  # bare_material, coated_material, electrode, material_group
+    "substrate formula": "",
+    "coating formula": "",
+    "coating amount": {"value": "", "unit": ""},
 }
 """
 
@@ -376,6 +381,9 @@ etc = """
         "value": "",
         "unit": "",
         "condition": "",
+        "comparison": "",
+        "is_approximate": null,
+        "evidence": "",
     }, ...
 ]
 """

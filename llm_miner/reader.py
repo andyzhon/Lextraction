@@ -104,6 +104,17 @@ class JournalReader(BaseModel):
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, ensure_ascii=False)
 
+    def attach_table_context(self):
+        """Carry nearby source text through reconstruction without merging it into a table."""
+        for position, element in enumerate(self.elements):
+            if element.type != "table":
+                continue
+            nearby = [e for e in self.elements[max(0, position - 2):position] if e.type == "text"]
+            if nearby:
+                element.intermediate_step["table_context"] = "\n\n".join(
+                    f"[element {e.idx}] {e.clean_text or e.content}" for e in nearby)[-12000:]
+                element.intermediate_step["table_context_idx"] = [str(e.idx) for e in nearby]
+
     def reconstruct(self, model_name: str = "gpt-4") -> None: # 重新组织论文段落
         if self.cln_elements:  # clear cln_elements
             self.cln_elements = Elements.empty()

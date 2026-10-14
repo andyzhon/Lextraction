@@ -1,4 +1,7 @@
-PROPERTY_CATEGORIZE = """From the provided markdown table, generate a Python list of item names with data present. You must exclude absent items and return an empty list if any key items are missing. Names of items must be one of following:
+from llm_miner.format.extraction_rules import SAMPLE_RULES
+from llm_miner.format.battery import PROPERTIES
+
+PROPERTY_CATEGORIZE = SAMPLE_RULES + """From the provided markdown table, generate a Python list of item names with data present. Exclude absent measurements, but retain a reported measurement when optional test conditions are missing. Names of items must be one of following:
 
 {{explanation}}
 
@@ -95,7 +98,7 @@ Input:
 List:"""
 
 
-PROPERTY_EXTRACT = """From the given Markdown table, extract information related to {{prop}} for each materials. Extracted information should be in structured json format as in the Format below but when presenting the output, strictly refrain from using ellipsis. When lanthanides (Ln) or halogens (X) or metal (M) come out, indicate by substituting.
+PROPERTY_EXTRACT = SAMPLE_RULES + """From the given Markdown table, extract information related to {{prop}} for each material. Nearby context may identify the sample and explicitly stated test conditions; numeric measurements must come from this table. Do not invent a material identity when the context does not identify it. Extracted information should be in structured json format as in the Format below but when presenting the output, strictly refrain from using ellipsis. When lanthanides (Ln) or halogens (X) or metal (M) come out, indicate by substituting.
 {{format}}
 
 Begin!
@@ -114,3 +117,5 @@ FT_TYPE = """From the provided markdown table, generate a Python list of item na
 
 
 FT_HUMAN = "{paragraph}"
+
+FT_TYPE += "\nAdditional supported properties: " + ", ".join(PROPERTIES) + SAMPLE_RULES

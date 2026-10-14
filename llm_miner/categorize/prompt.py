@@ -2,9 +2,9 @@ PROMPT_CATEGORIZE = """First, you must decide type of paragraph that it should b
 
 You must follow rules below:
 - You must return ["synthesis condition"] only when the paragraph includes several processes such as chemical synthesis, washing, and drying. It also includes specific IR or NMR information often. ex) "IR: 3137(m), 2359(m), 1655(s), 1493(s), 1262(s), 1210(s), 1148(s), 805(m), 668(m), 589(m).
-- You must return ["property"] only when the paragraph includes "property type", "specific value of property" and "unit of the property". ex) surface area of 2500 m2/g
+- Return ["property"] for numeric material measurements or their experimental test setup, including battery cycling, cobalt dissolution, DSC and TGA conditions. These measurement conditions are not synthesis.
 - If there are both "synthesis condition" and "property", return ["property", "synthesis condition"].
-- When the paragraph does not include both synthesis condition and property, it means that there is no information. In this case, you must return ["else"].
+- Return ["else"] only when neither synthesis nor property/test-condition information is present.
 - Only possible answer is ["property"], ["synthesis condition"], ["property","synthesis condition"] or ["else"]
 - If "TGA" is in the paragraph, it means that it contains only "property", not "synthesis condition".
 
@@ -37,7 +37,7 @@ FT_CATEGORIZE = (
     "Categorize the paragraph given. "
     "Select one or more categories from \"synthesis condition\" and \"property\". "
     "If the paragraph does not fit into either of these categories, choose \"else\". "
-    "\"property\" paragraph must include specific numerical value of the property. "
+    "\"property\" includes numeric measurements and their electrochemical/DSC/TGA test conditions. "
     "ex) surface area of 2500 m2/g"
 )
 

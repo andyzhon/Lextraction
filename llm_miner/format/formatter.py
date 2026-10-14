@@ -88,3 +88,7 @@ class Formatter(object):
             'example_text',
             'operation'
         ]
+
+
+from llm_miner.format.battery import register
+register(Formatter)

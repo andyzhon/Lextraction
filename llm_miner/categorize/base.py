@@ -51,6 +51,7 @@ class CategorizeAgent(Chain):
         token_checker: TokenChecker = inputs.get('token_checker')
 
         if para.type in self.labels:
+            para.set_classification(para.type)
             self._write_log([para.type], _run_manager)
             return {self.output_key: [para.type]}
         

@@ -80,7 +80,15 @@ class MarkdownParser(BaseParser):
     @staticmethod
     def _caption(text, kind):
         labels = r"(?:Table|表)" if kind == "table" else r"(?:Fig(?:ure)?\.?|图)"
-        return bool(re.match(r"^" + labels + r"\s*(?:S?\d|[一二三四五六七八九十])", text, re.I))
+        match = re.match(r"^" + labels + r"\s*(?:S?\d+|[一二三四五六七八九十]+)(?:\s*\([a-z]\))?", text, re.I)
+        if not match:
+            return False
+        # A reference introducing a discussion paragraph is not a caption.
+        rest = text[match.end():].lstrip(" .:：")
+        return not re.match(
+            r"(?:shows?|illustrates?|reveals?|demonstrates?|presents?|compares?|"
+            r"indicates?|depicts?|summari[sz]es?|suggests?|displays?|provides?|"
+            r"is\s+(?:shown|presented)|给出|显示|表明|说明|展示)\b", rest, re.I)
 
     @classmethod
     def parsing(cls, document):
@@ -92,6 +100,11 @@ class MarkdownParser(BaseParser):
             text = text.strip()
             if kind == "text" and not text:
                 return
+            # Keep neighbouring prose available for table identity and routing.
+            context = {}
+            if kind == "table" and elements and elements[-1].type == "text":
+                context = {"context_before": elements[-1].clean_text,
+                           "context_before_idx": str(elements[-1].idx)}
             # Attach a labelled caption immediately before/after a table or image.
             if kind in {"table", "figure"} and elements:
                 previous = elements[-1]
@@ -110,6 +123,7 @@ class MarkdownParser(BaseParser):
                         previous.clean_text = (previous.clean_text + "\n\n" + text).strip()
                     return
             steps = {"table_format": table_format} if table_format else {}
+            steps.update(context)
             element = Paragraph(idx=len(elements) + 1, type=kind,
                                 content=source.strip(), clean_text=text,
                                 intermediate_step=steps)
@@ -136,13 +150,20 @@ class MarkdownParser(BaseParser):
                                for c in inline.children or []
                                if c.type == "html_inline" and re.match(r"<img\b", c.content, re.I)]
                 non_image_text = cls._inline_text(inline.children, include_images=False)
-                kind = ("figure" if (images or html_images) and (not non_image_text or
-                        cls._caption(non_image_text, "figure")) else "text")
+                sources = ([image.attrGet("src") for image in images]
+                           + [image.get("src") for image in html_images])
+                if sources and non_image_text and not cls._caption(non_image_text, "figure"):
+                    # Mixed prose/image paragraphs need two independent routes.
+                    add("text", source, non_image_text)
+                    element = add("figure", "\n\n".join(
+                        f"![image]({src})" for src in sources), "image")
+                    element.intermediate_step["image_sources"] = sources
+                    i += 3
+                    continue
+                kind = "figure" if sources else "text"
                 element = add(kind, source, text)
                 if kind == "figure":
-                    element.intermediate_step["image_sources"] = (
-                        [image.attrGet("src") for image in images]
-                        + [image.get("src") for image in html_images])
+                    element.intermediate_step["image_sources"] = sources
                 i += 3
                 continue
             if token.type in {"fence", "code_block", "math_block", "math_block_label"}:

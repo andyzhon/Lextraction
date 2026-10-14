@@ -18,6 +18,7 @@ from llm_miner.format import Formatter
 from llm_miner.error import LangchainError
 from llm_miner.pricing import TokenChecker, update_token_checker
 from llm_miner.structured_output import parse_structured_output
+from llm_miner.validation import normalize_measurements
 
 
 class TextMiningAgent(Chain):
@@ -81,11 +82,67 @@ class TextMiningAgent(Chain):
                 llm_output=llm_output
             )
 
+
         property_type = self._parse_output(llm_output)
         self._write_log(str(property_type), _run_manager)
-        element.set_include_properties(property_type)
 
-        st_data_string = ""
+        # 判断第一阶段是否已经输出完整的属性记录
+        if (
+            isinstance(property_type, list)
+            and property_type
+            and all(
+                isinstance(p, dict)
+                and isinstance(p.get("property"), str)
+                for p in property_type
+            )
+        ):
+            # 按样品名称组织提取结果
+            grouped = {}
+
+            for item in property_type:
+                sample = str(item.get("sample") or "unknown")
+                prop = item["property"]
+
+                if sample not in grouped:
+                    grouped[sample] = {
+                        "meta": {
+                            "name": sample,
+                            "symbol": "",
+                            "chemical formula": ""
+                        }
+                    }
+
+                # 保留数值、单位、测试条件、原文证据
+                record = {
+                    k: v
+                    for k, v in item.items()
+                    if k not in ("property", "sample")
+                }
+
+                grouped[sample].setdefault(prop, []).append(record)
+
+            # 保存识别出的属性类别
+            property_names = list(dict.fromkeys(
+                p["property"] for p in property_type
+            ))
+
+            element.set_include_properties(property_names)
+
+            # 保存符合 L2M3 数据结构的结果
+            output = list(grouped.values())
+            element.set_data(output)
+
+            return {"output": output}
+
+        # 保留原来的两阶段处理逻辑
+        element.set_include_properties(property_type)
+        
+        
+        if not property_type:
+            element.set_data([])
+            return {"output": []}
+
+        st_data_string = Formatter.structured_data["meta"] + "\n"
         info_string = ""
         example_string = ""
         prop_string = ""
@@ -93,8 +150,8 @@ class TextMiningAgent(Chain):
         for prop in property_type: # 动态生成提取规则
             try:
                 st_data = Formatter.structured_data[prop]
-                info = Formatter.information[prop]
-                example = Formatter.example_text[prop]
+                info = Formatter.information.data.get(prop, "")
+                example = Formatter.example_text.data.get(prop, "")
             except KeyError:
                 self._write_log(f"There are no format for {prop}", _run_manager)
                 continue
@@ -132,7 +189,7 @@ class TextMiningAgent(Chain):
                 llm_output=llm_output
             )
 
-        st_output = self._parse_output(llm_output)
+        st_output = normalize_measurements(self._parse_output(llm_output))
         self._write_log(f"{st_output}", _run_manager)
 
         element.set_data([st_output])
