@@ -67,3 +67,6 @@ upload_*.xlsx
 
 # data
 /data/
+
+# hs
+/hs/
