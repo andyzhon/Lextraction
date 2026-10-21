@@ -41,87 +41,91 @@ PROPERTIES = { # 指导模型理解格式
                         {"test_type": "", "cell_type": "", "rate": "", "voltage_range": "", "charged_voltage": "", "hold_time": "", "heating_rate": "", "atmosphere": "", "electrolyte": "", "condition": ""},
                         {"test_type": "TGA", "heating_rate": "10 °C/min", "atmosphere": "argon"}),
 
+    "c_rate_reference": (
+        "Reported basis of a 1C rate (e.g. 1C = 250 mAh/g). Do not infer it from a capacity measurement.",
+        {"value": "", "unit": "", "definition": "", "condition": ""},
+        {"value": "200", "unit": "mAh/g", "definition": "1C"},
+    ),
     "average_discharge_voltage": (
-        "Average discharge voltage at a specified cycle.",
-        {
-            "value": "", "unit": "",
-            "cycles": "", "rate": "",
-            "condition": ""
-        },
-        {"value": "3.5", "unit": "V", "cycles": "1"}
+        "Reported average discharge voltage at a specific cycle and rate, not voltage cutoff or a CV peak.",
+        {"value": "", "unit": "", "cycles": "", "rate": "", "voltage_range": "", "condition": ""},
+        {"value": "3.65", "unit": "V", "cycles": "1"},
     ),
-
+    "voltage_drop": (
+        "Reported drop in average discharge voltage between two cycles; never calculate a missing value or replace a reported value.",
+        {"value": "", "unit": "", "initial_cycle": "", "final_cycle": "", "rate": "", "condition": ""},
+        {"value": "0.3", "unit": "V", "initial_cycle": "1", "final_cycle": "100"},
+    ),
     "voltage_decay_rate": (
-        "Reported voltage fading rate per cycle.",
-        {
-            "value": "", "unit": "",
-            "cycles": "", "condition": ""
-        },
-        {"value": "4.5", "unit": "mV/cycle"}
+        "Reported voltage decay per cycle (mV/cycle); distinguish it from total voltage drop. Never derive an unreported rate.",
+        {"value": "", "unit": "", "initial_cycle": "", "final_cycle": "", "rate": "", "condition": ""},
+        {"value": "4.2", "unit": "mV/cycle", "condition": "reported"},
     ),
-
     "cv_peak_separation": (
-        "Potential separation between CV redox peaks.",
-        {
-            "value": "", "unit": "",
-            "method": "", "condition": ""
-        },
-        {"value": "0.2", "unit": "V", "method": "CV"}
+        "Peak-to-peak potential difference in cyclic voltammetry; not average discharge voltage or a voltage window.",
+        {"value": "", "unit": "", "method": "", "scan_rate": "", "cycles": "", "condition": ""},
+        {"value": "0.25", "unit": "V", "method": "CV"},
     ),
-
     "charge_transfer_resistance": (
-        "Charge-transfer resistance measured by EIS.",
-        {
-            "value": "", "unit": "",
-            "cycles": "", "method": "",
-            "condition": ""
-        },
-        {"value": "80", "unit": "ohm", "method": "EIS"}
+        "Charge-transfer resistance (Rct) from EIS. Attach each value to its explicit cycling state; do not assume initial/after-cycle labels from arrow order alone.",
+        {"value": "", "unit": "", "method": "", "cycles": "", "rate": "", "fitting_model": "", "condition": ""},
+        {"value": "95", "unit": "ohm", "method": "EIS", "cycles": "100"},
     ),
-
+    "lithium_diffusion_coefficient": (
+        "Numerical Li-ion diffusion coefficient D_Li from GITT/PITT/EIS, only when a numerical value or range is explicitly given. Keep logarithm basis if log(D) is reported; do not invent values from qualitative trends.",
+        {"value": "", "unit": "", "method": "", "quantity": "", "soc": "", "state": "", "condition": ""},
+        {"value": "1e-11", "unit": "cm2/s", "method": "GITT", "quantity": "D_Li"},
+    ),
+    "rate_recovery_capacity": (
+        "Discharge capacity measured after returning to a lower C-rate in a rate-capability experiment; record the preceding and returned rates.",
+        {"value": "", "unit": "", "previous_rate": "", "recovered_rate": "", "cycles": "", "voltage_range": "", "condition": ""},
+        {"value": "190", "unit": "mAh/g", "previous_rate": "2C", "recovered_rate": "0.1C"},
+    ),
     "xrd_intensity_ratio": (
-        "XRD peak intensity ratio with indexed peaks.",
-        {
-            "value": "", "unit": "",
-            "peaks": "", "method": "",
-            "condition": ""
-        },
-        {"value": "1.5", "unit": "",
-         "peaks": "(003)/(104)"}
+        "Ratio of XRD peak intensities I(hkl1)/I(hkl2); keep exact plane indices and comparison signs.",
+        {"value": "", "unit": "", "numerator_hkl": "", "denominator_hkl": "", "method": "", "condition": ""},
+        {"value": "1.6", "unit": "ratio", "numerator_hkl": "(003)", "denominator_hkl": "(104)", "method": "XRD"},
     ),
-
-    "xps_binding_energy": (
-        "XPS binding energy of a specified element and orbital.",
-        {
-            "value": "", "unit": "",
-            "element": "", "orbital": "",
-            "oxidation_state": "", "condition": ""
-        },
-        {"value": "855", "unit": "eV",
-         "element": "Ni", "orbital": "2p3/2"}
+    "lattice_parameter": (
+        "Unit-cell lattice parameter a, b or c, one axis per record, with units. Do not confuse crystallographic parameter with crystallite size.",
+        {"value": "", "unit": "", "axis": "", "phase": "", "method": "", "condition": ""},
+        {"value": "2.86", "unit": "Å", "axis": "a", "method": "XRD"},
     ),
-
-    "eds_elemental_composition": (
-        "EDS element abundance; distinguish mass and atomic percent.",
-        {
-            "value": "", "unit": "",
-            "element": "", "basis": "",
-            "condition": ""
-        },
-        {"value": "20", "unit": "%",
-         "element": "Ni", "basis": "atomic"}
+    "lattice_parameter_ratio": (
+        "Reported ratio of lattice parameters such as c/a; dimensionless, not an XRD peak intensity ratio.",
+        {"value": "", "unit": "", "ratio": "", "phase": "", "method": "", "condition": ""},
+        {"value": "4.99", "unit": "ratio", "ratio": "c/a", "method": "XRD"},
     ),
-
+    "unit_cell_volume": (
+        "Volume of the crystallographic unit cell; not particle volume, pore volume or unit-cell length.",
+        {"value": "", "unit": "", "phase": "", "method": "", "condition": ""},
+        {"value": "100", "unit": "Å3", "method": "XRD"},
+    ),
     "lattice_plane_spacing": (
-        "Interplanar distance of an indexed lattice plane.",
-        {
-            "value": "", "unit": "",
-            "hkl": "", "phase": "",
-            "method": "", "condition": ""
-        },
-        {"value": "0.47", "unit": "nm",
-         "hkl": "(003)", "method": "TEM"}
-    )
+        "Interplanar spacing d(hkl) from TEM/HRTEM/XRD; record phase, plane and pre-/post-cycling state, if stated.",
+        {"value": "", "unit": "", "hkl": "", "phase": "", "method": "", "cycles": "", "condition": ""},
+        {"value": "0.47", "unit": "nm", "hkl": "(003)", "method": "HRTEM"},
+    ),
+    "eds_elemental_composition": (
+        "EDS elemental abundance; record element and whether basis is mass or atomic percent. Separate two bases into distinct records; do not conflate them.",
+        {"value": "", "unit": "", "element": "", "basis": "", "method": "", "condition": ""},
+        {"value": "22.5", "unit": "%", "element": "Ni", "basis": "atomic", "method": "EDS"},
+    ),
+    "xps_binding_energy": (
+        "XPS binding energy for a specific element and core level (e.g. Ni 2p3/2), with reported oxidation state only if supported.",
+        {"value": "", "unit": "", "element": "", "orbital": "", "oxidation_state": "", "method": "", "condition": ""},
+        {"value": "855.0", "unit": "eV", "element": "Ni", "orbital": "2p3/2", "method": "XPS"},
+    ),
+    "xps_spin_orbit_splitting": (
+        "Reported spin-orbit separation of the two XPS core-level peaks; not an individual binding energy.",
+        {"value": "", "unit": "", "element": "", "orbitals": "", "method": "", "condition": ""},
+        {"value": "15", "unit": "eV", "element": "Co", "orbitals": "2p1/2 - 2p3/2", "method": "XPS"},
+    ),
+    "qualitative_performance_comparison": (
+        "A nonnumeric, explicitly stated characterization or performance comparison. Preserve exact sample, comparator, technique, direction and verbatim evidence. Do not invent numerical diffusion, impedance or rate-capability values.",
+        {"observation": "", "property": "", "reference_sample": "", "direction": "", "method": "", "condition": ""},
+        {"observation": "The coated sample has lower polarization than the uncoated one", "property": "polarization", "reference_sample": "uncoated sample", "direction": "lower", "method": "CV"},
+    ),
 
 }
 
