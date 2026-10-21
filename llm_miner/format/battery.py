@@ -3,7 +3,7 @@
 import json
 
 
-PROPERTIES = {
+PROPERTIES = { # 指导模型理解格式
     "particle_size": ("Particle diameter measured by microscopy or a particle-size analyser; not crystallite size.",
                       {"value": "", "unit": "", "method": "", "condition": ""},
                       {"value": "7", "unit": "µm", "method": "SEM"}),
@@ -40,6 +40,89 @@ PROPERTIES = {
     "test_conditions": ("Electrochemical/DSC/TGA measurement setup, including shared conditions; not material synthesis.",
                         {"test_type": "", "cell_type": "", "rate": "", "voltage_range": "", "charged_voltage": "", "hold_time": "", "heating_rate": "", "atmosphere": "", "electrolyte": "", "condition": ""},
                         {"test_type": "TGA", "heating_rate": "10 °C/min", "atmosphere": "argon"}),
+
+    "average_discharge_voltage": (
+        "Average discharge voltage at a specified cycle.",
+        {
+            "value": "", "unit": "",
+            "cycles": "", "rate": "",
+            "condition": ""
+        },
+        {"value": "3.5", "unit": "V", "cycles": "1"}
+    ),
+
+    "voltage_decay_rate": (
+        "Reported voltage fading rate per cycle.",
+        {
+            "value": "", "unit": "",
+            "cycles": "", "condition": ""
+        },
+        {"value": "4.5", "unit": "mV/cycle"}
+    ),
+
+    "cv_peak_separation": (
+        "Potential separation between CV redox peaks.",
+        {
+            "value": "", "unit": "",
+            "method": "", "condition": ""
+        },
+        {"value": "0.2", "unit": "V", "method": "CV"}
+    ),
+
+    "charge_transfer_resistance": (
+        "Charge-transfer resistance measured by EIS.",
+        {
+            "value": "", "unit": "",
+            "cycles": "", "method": "",
+            "condition": ""
+        },
+        {"value": "80", "unit": "ohm", "method": "EIS"}
+    ),
+
+    "xrd_intensity_ratio": (
+        "XRD peak intensity ratio with indexed peaks.",
+        {
+            "value": "", "unit": "",
+            "peaks": "", "method": "",
+            "condition": ""
+        },
+        {"value": "1.5", "unit": "",
+         "peaks": "(003)/(104)"}
+    ),
+
+    "xps_binding_energy": (
+        "XPS binding energy of a specified element and orbital.",
+        {
+            "value": "", "unit": "",
+            "element": "", "orbital": "",
+            "oxidation_state": "", "condition": ""
+        },
+        {"value": "855", "unit": "eV",
+         "element": "Ni", "orbital": "2p3/2"}
+    ),
+
+    "eds_elemental_composition": (
+        "EDS element abundance; distinguish mass and atomic percent.",
+        {
+            "value": "", "unit": "",
+            "element": "", "basis": "",
+            "condition": ""
+        },
+        {"value": "20", "unit": "%",
+         "element": "Ni", "basis": "atomic"}
+    ),
+
+    "lattice_plane_spacing": (
+        "Interplanar distance of an indexed lattice plane.",
+        {
+            "value": "", "unit": "",
+            "hkl": "", "phase": "",
+            "method": "", "condition": ""
+        },
+        {"value": "0.47", "unit": "nm",
+         "hkl": "(003)", "method": "TEM"}
+    )
+
 }
 
 

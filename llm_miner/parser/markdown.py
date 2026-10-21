@@ -12,7 +12,7 @@ from llm_miner.schema import Paragraph
 
 
 @dataclass
-class MarkdownDocument:
+class MarkdownDocument: # MarkdownDocument就是一个由body、front_matter和tokens组成的简单数据结构
     body: str
     front_matter: Dict[str, Any]
     tokens: List[Any]

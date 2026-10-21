@@ -69,7 +69,7 @@ class Material(BaseModel):
         return re.sub(r"\s+", " ", name).strip()
 
     def concatenate(self, others: object) -> None:  # before: concatenate_data
-        # 같은 meta를 가지는 두 물질 정보를 합쳐서 하나의 물질 정보로 만들기 # should be revised
+        # 将具有相同元数据的两条物质信息合并为一条物质信息
         s_formula, s_general = self.chemical_formula, self.is_general
         o_formula, o_general = others.chemical_formula, others.is_general
         if s_general:
